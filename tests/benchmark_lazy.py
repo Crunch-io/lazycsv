@@ -120,8 +120,8 @@ def main():
     cols = 200000
     rows = 3000000
 
-    cols = 10000
-    rows = 100000
+    cols = 300000
+    rows = 300000
     sparsity = 0.95
 
     benchmarks = {

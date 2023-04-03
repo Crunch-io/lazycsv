@@ -31,6 +31,20 @@ class TestLazyCSV:
         assert lazy.name == os.path.abspath(FPATH)
         assert lazy.headers == (b"", b"ALPHA", b"BETA")
 
+    def test_more_headers(self):
+        data = b"INDEX,,AA,B,CC,D,EE\n0,1,2,3,4,5,6\n"
+        with prepped_file(data) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name)
+
+        assert lazy.headers == (b"INDEX", b"", b"AA", b"B", b"CC", b"D", b"EE")
+
+    def test_headers_empty_index(self):
+        data = b",AA,B,CC,D,EE\n0,1,2,3,4,\n"
+        with prepped_file(data) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name)
+
+        assert lazy.headers == (b"", b"AA", b"B", b"CC", b"D", b"EE")
+
     def test_initial_parse(self, lazy):
         assert lazy.rows == 2
         assert lazy.cols == 3
@@ -49,7 +63,18 @@ class TestLazyCSV:
         data = list(lazy.sequence(col=2))
         assert data == [b"b0", b"b1"]
 
-    def test_headless_get_column(self):
+    def test_get_data_col(self):
+        data = b"INDEX,ATTR\n0,a\n1,b\n2,c\n3,d\n"
+        with prepped_file(data) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name)
+            actual = list(list(lazy.sequence(col=i)) for i in range(lazy.cols))
+
+        assert lazy.rows == 4
+        assert lazy.cols == 2
+        assert actual == [[b'0', b"1", b"2", b"3"], [b'a', b"b", b"c", b"d"]]
+        assert lazy.headers == (b'INDEX', b'ATTR')
+
+    def test_headless_data_col(self):
         data = b"INDEX,ATTR\n0,a\n1,b\n"
         with prepped_file(data) as tempf:
             lazy = lazycsv.LazyCSV(tempf.name, skip_headers=True)
@@ -250,7 +275,7 @@ class TestEdgecases:
         assert expected == actual
 
     def test_problematic_numeric(self):
-        data = """
+        data = """\
         ColName
         -9
         -179769313486000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -263,7 +288,7 @@ class TestEdgecases:
         data = data.encode()
 
         with prepped_file(data) as tempf:
-            lazy = lazycsv.LazyCSV(tempf.name)
+            lazy = lazycsv.LazyCSV(tempf.name, skip_headers=True)
             actual = list(list(lazy.sequence(col=i)) for i in range(lazy.cols))
 
         assert actual == [data.split()]
