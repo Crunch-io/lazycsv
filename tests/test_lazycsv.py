@@ -1,4 +1,5 @@
 import contextlib
+import os
 import os.path
 import tempfile
 import textwrap
@@ -15,6 +16,24 @@ FPATH = os.path.join(HERE, "fixtures/file.csv")
 def lazy():
     lazy = lazycsv.LazyCSV(FPATH)
     yield lazy
+
+@pytest.fixture
+def file_1000r_1000c():
+    tempf = tempfile.NamedTemporaryFile()
+
+    cols = 1000
+    rows = 1000
+
+    headers = ",".join(f"col_{i}" for i in range(cols)) + "\n"
+    tempf.write(headers.encode("utf8"))
+
+    for _ in range(rows):
+        row = ",".join(f"{j}" for j in range(cols)) + "\n"
+        tempf.write(row.encode("utf8"))
+
+    tempf.flush()
+    yield tempf
+    tempf.close()
 
 
 @contextlib.contextmanager
@@ -181,6 +200,21 @@ class TestLazyCSVOptions:
         data = [list(lazy.sequence(col=i)) for i in range(lazy.cols)]
         assert data == [[b"0"], [b'"Goo,Bar\n"'], [b'"Bizz,Bazz"']]
 
+    def test_buffer_size(self):
+        lazy = lazycsv.LazyCSV(FPATH, buffer_size=1024)
+        data = list(lazy.sequence(col=0))
+        assert data == [b"0", b"1"]
+
+    def test_negative_buffer_size(self):
+        with pytest.raises(ValueError) as e:
+            lazycsv.LazyCSV(FPATH, buffer_size=-1)
+        assert e.type == ValueError
+
+    def test_dirname(self):
+        tempdir = tempfile.TemporaryDirectory()
+        lazy = lazycsv.LazyCSV(FPATH, index_dir=tempdir.name)
+        assert len(os.listdir(tempdir.name)) == 1
+
 
 class TestCRLF:
     def test_crlf(self):
@@ -209,21 +243,13 @@ class TestCRLF:
 
 
 class TestBigFiles:
-    def test_bigger_file(self):
-        tempf = tempfile.NamedTemporaryFile()
+    def test_bigger_file(self, file_1000r_1000c):
+        lazy = lazycsv.LazyCSV(file_1000r_1000c.name)
+        data = list(lazy.sequence(col=0))
+        assert len(data) == 1000
 
-        cols = 1000
-        rows = 1000
-
-        headers = ",".join(f"col_{i}" for i in range(cols)) + "\n"
-        tempf.write(headers.encode("utf8"))
-
-        for _ in range(rows):
-            row = ",".join(f"{j}" for j in range(cols)) + "\n"
-            tempf.write(row.encode("utf8"))
-
-        tempf.flush()
-        lazy = lazycsv.LazyCSV(tempf.name)
+    def test_variable_buffer_size(self, file_1000r_1000c):
+        lazy = lazycsv.LazyCSV(file_1000r_1000c.name, buffer_size=10**7)
         data = list(lazy.sequence(col=0))
         assert len(data) == 1000
 

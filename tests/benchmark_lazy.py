@@ -27,8 +27,8 @@ def run_lazy(fpath):
     print(f"indexing lazy... time to index: {te-ti}")
 
     for c in range(lazy.cols):
-        col = list(lazy.sequence(col=0))
-        if c % 10 == 0:
+        col = list(lazy.sequence(col=c))
+        if c % 100 == 0:
             print(f"parsing cols... {c}/{lazy.cols}", end="\r")
         del col
 
@@ -54,7 +54,7 @@ def run_datatable(fpath):
 
     for c in range(frame.ncols):
         col = frame[c].to_list()
-        if c % 10 == 0:
+        if c % 100 == 0:
             print(f"parsing cols... {c}/{frame.ncols}", end="\r")
         del col
 
@@ -80,7 +80,7 @@ def run_pandas(fpath):
 
     for i, c in enumerate(df.columns):
         col = df[c]
-        if i % 10 == 0:
+        if i % 100 == 0:
             print(f"parsing col: {c}", end="\r")
         del col
 
@@ -104,7 +104,7 @@ def run_pyarrow(fpath):
 
     for c in range(table.num_columns):
         col = table[c].to_pylist()
-        if c % 10 == 0:
+        if c % 100 == 0:
             print(f"parsing cols... {c}/{table.num_columns}", end="\r")
         del col
 
@@ -120,15 +120,15 @@ def main():
     cols = 200000
     rows = 3000000
 
-    cols = 300000
-    rows = 300000
+    cols = 100000
+    rows = 100000
     sparsity = 0.95
 
     benchmarks = {
         # "pandas": run_pandas,
         # "pyarrow": run_pyarrow,
         "lazycsv": run_lazy,
-        "datatable": run_datatable,
+        # "datatable": run_datatable,
     }
 
     filename = f"benchmark_{rows}r_{cols}c_{int(sparsity*100)}%.csv"
