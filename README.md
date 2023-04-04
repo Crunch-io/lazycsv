@@ -113,34 +113,34 @@ rows=10000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 0.9846110779999435
-parsing cols... time to parse: 1.4814507720000165
-total time: 2.46606184999996
+indexing lazy... time to index: 0.9623839899995801
+parsing cols... time to parse: 1.377780000999337
+total time: 2.340163990998917
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
-creating datatables frame... time to object: 0.41146984300007716
-parsing cols... time to parse: 3.753832629000044
-total time: 4.165302472000121
+creating datatables frame... time to object: 0.4007758339994325
+parsing cols... time to parse: 3.6466693760012276
+total time: 4.04744521000066
 ```
 
 ```
-``root@f2612b113d10:/code# python tests/benchmark_lazy.py
+root@f2612b113d10:/code# python tests/benchmark_lazy.py
 filesize: 1.387gb
 cols=10000
 rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 8.608913677999908
-parsing cols... time to parse: 21.72626765100017
-total time: 30.33518132900008
+indexing lazy... time to index: 8.31047367499923
+parsing cols... time to parse: 21.33977803900052
+total time: 29.65025171399975
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
-creating datatables frame... time to object: 2.3598619169999893
-parsing cols... time to parse: 36.83905054699994
-total time: 39.19891246399993
+creating datatables frame... time to object: 2.3516600279999693
+parsing cols... time to parse: 35.72737046200018
+total time: 38.07903049000015
 ```
 
 ```

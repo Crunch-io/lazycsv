@@ -310,6 +310,10 @@ static PyObject* LazyCSV_IterNext(PyObject* self) {
     if (iter->row != SIZE_MAX) {
         return LazyCSV_IterRow(iter);
     }
+    PyErr_SetString(
+        PyExc_RuntimeError,
+        "could not determine axis for materialization"
+    );
     return NULL;
 }
 
@@ -320,10 +324,108 @@ static PyObject* LazyCSV_IterSelf(PyObject* self) {
 }
 
 
+static inline void _PyTuple_SET_ITEM(PyObject* coll, Py_ssize_t idx, PyObject* item) {
+    // needs to be actual fn depending on compiler
+    PyTuple_SET_ITEM(coll, idx, item);
+}
+
+
+static inline void _PyList_SET_ITEM(PyObject* coll, Py_ssize_t idx, PyObject* item) {
+    // needs to be actual fn depending on compiler
+    PyList_SET_ITEM(coll, idx, item);
+}
+
+
+static PyObject* LazyCSV_IterMater(PyObject* self, PyObject* args, PyObject* kwargs) {
+    LazyCSV_Iter* iter = (LazyCSV_Iter*)self;
+    LazyCSV* lazy = (LazyCSV*)iter->lazy;
+
+    PyTypeObject* type = NULL;
+
+    static char *kwlist[] = {"type", NULL};
+    char ok = PyArg_ParseTupleAndKeywords(
+        args, kwargs, "|O", kwlist, &type
+    );
+
+    if (!ok) {
+        PyErr_SetString(
+            PyExc_ValueError,
+            "unable to parse iter.materialize(type=list) arguments"
+        );
+        return NULL;
+    }
+
+    PyObject* (*next)(LazyCSV_Iter*);
+    PyObject* (*new)(Py_ssize_t);
+    void (*set)(PyObject*, Py_ssize_t, PyObject*);
+
+    if (!type || type->tp_new == (&PyList_Type)->tp_new) {
+        new = PyList_New;
+        set = _PyList_SET_ITEM;
+    }
+    else if (type->tp_new == (&PyTuple_Type)->tp_new) {
+        new = PyTuple_New;
+        set = _PyTuple_SET_ITEM;
+    }
+    else {
+        PyErr_SetString(
+            PyExc_RuntimeError,
+            "could not determine type for materialization,"
+            " should be either list or tuple"
+        );
+        return NULL;
+    }
+
+    size_t size;
+
+    if (iter->col != SIZE_MAX) {
+        size = lazy->rows - iter->position;
+        next = LazyCSV_IterCol;
+    }
+    else if (iter->row != SIZE_MAX) {
+        size = lazy->cols - iter->position;
+        next = LazyCSV_IterRow;
+    }
+    else {
+        PyErr_SetString(
+            PyExc_RuntimeError,
+            "could not determine axis for materialization"
+        );
+        return NULL;
+    }
+
+    PyObject* result = new(size);
+
+    PyObject* item;
+    size_t index = 0;
+    while ((item = next(iter))) {
+        set(result, index, item);
+        index++;
+    }
+
+    if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+        PyErr_Clear();
+    }
+
+    return result;
+}
+
+
 static void LazyCSV_IterDestruct(LazyCSV_Iter* self) {
     Py_DECREF(self->lazy);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
+
+
+static PyMethodDef LazyCSV_IterMethods[] = {
+    {
+        "materialize",
+        (PyCFunction)LazyCSV_IterMater,
+        METH_VARARGS|METH_KEYWORDS,
+        "materialize iterator into a list"
+    },
+    {NULL, }
+};
 
 
 static PyTypeObject LazyCSV_IterType = {
@@ -333,6 +435,7 @@ static PyTypeObject LazyCSV_IterType = {
     .tp_dealloc = (destructor)LazyCSV_IterDestruct,
     .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
     .tp_doc = "LazyCSV iterable",
+    .tp_methods = LazyCSV_IterMethods,
     .tp_iter = LazyCSV_IterSelf,
     .tp_iternext = LazyCSV_IterNext,
 };

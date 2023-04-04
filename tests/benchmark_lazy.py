@@ -27,7 +27,7 @@ def run_lazy(fpath):
     print(f"indexing lazy... time to index: {te-ti}")
 
     for c in range(lazy.cols):
-        col = list(lazy.sequence(col=c))
+        col = lazy.sequence(col=c).materialize(tuple)
         if c % 100 == 0:
             print(f"parsing cols... {c}/{lazy.cols}", end="\r")
         del col
@@ -128,7 +128,7 @@ def main():
         # "pandas": run_pandas,
         # "pyarrow": run_pyarrow,
         "lazycsv": run_lazy,
-        # "datatable": run_datatable,
+        "datatable": run_datatable,
     }
 
     filename = f"benchmark_{rows}r_{cols}c_{int(sparsity*100)}%.csv"
