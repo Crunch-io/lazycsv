@@ -27,7 +27,7 @@ def run_lazy(fpath):
     print(f"indexing lazy... time to index: {te-ti}")
 
     for c in range(lazy.cols):
-        col = lazy.sequence(col=c).materialize(tuple)
+        col = list(lazy.sequence(col=c))
         if c % 100 == 0:
             print(f"parsing cols... {c}/{lazy.cols}", end="\r")
         del col
@@ -116,6 +116,58 @@ def run_pyarrow(fpath):
 
     print(f"\ntotal time: {tf-ti}")
 
+
+def run_polars_read(fpath):
+    import polars as pl
+
+    print("creating polars df...", end="\r")
+
+    ti = perf_counter()
+    table = pl.read_csv(fpath)
+    te = perf_counter()
+
+    print(f"creating polars df... time to object: {te-ti}")
+
+    for c in range(table.shape[1]):
+        col = table[:, c].to_list()
+        if c % 100 == 0:
+            print(f"parsing cols... {c}/{table.shape[1]}", end="\r")
+        del col
+
+    tf = perf_counter()
+
+    print(f"parsing cols... time to parse: {tf-te}", end="\r")
+
+    del table
+
+    print(f"\ntotal time: {tf-ti}")
+
+
+def run_polars_scan(fpath):
+    import polars as pl
+
+    print("creating polars df...", end="\r")
+
+    ti = perf_counter()
+    table = pl.scan_csv(fpath)
+    te = perf_counter()
+
+    cols = len(table.columns)
+    for i, c in enumerate(table.columns):
+        col = tuple(table.select(c).collect().get_column(c))
+        if i % 100 == 0:
+            print(f"parsing cols... {i}/{cols}", end="\r")
+        del col
+
+    tf = perf_counter()
+
+    print(f"parsing cols... time to parse: {tf-te}", end="\r")
+
+    del table
+
+    print(f"\ntotal time: {tf-ti}")
+
+
 def main():
     cols = 200000
     rows = 3000000
@@ -128,7 +180,9 @@ def main():
         # "pandas": run_pandas,
         # "pyarrow": run_pyarrow,
         "lazycsv": run_lazy,
-        "datatable": run_datatable,
+        # "datatable": run_datatable,
+        # "polars (read)": run_polars_read,
+        # "polars (scan)": run_polars_scan,
     }
 
     filename = f"benchmark_{rows}r_{cols}c_{int(sparsity*100)}%.csv"
