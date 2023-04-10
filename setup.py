@@ -23,7 +23,7 @@ setup(
     packages=find_packages(where="src"),
     extras_require={
         "test": ["pytest"],
-        "benchmarks": ["datatable", "pandas", "pyarrow"],
+        "benchmarks": ["datatable", "pandas", "pyarrow", "polars"],
     },
     package_dir={"": "src"},
     ext_modules=extensions,

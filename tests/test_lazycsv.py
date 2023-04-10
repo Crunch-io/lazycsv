@@ -1,4 +1,5 @@
 import contextlib
+import csv
 import os
 import os.path
 import tempfile
@@ -227,7 +228,7 @@ class TestLazyCSVOptions:
     def test_dirname(self):
         tempdir = tempfile.TemporaryDirectory()
         _ = lazycsv.LazyCSV(FPATH, index_dir=tempdir.name)
-        assert len(os.listdir(tempdir.name)) == 2
+        assert len(os.listdir(tempdir.name)) == 3
 
 
 class TestCRLF:
@@ -267,6 +268,29 @@ class TestBigFiles:
         actual = list(lazy.sequence(col=0))
         assert len(actual) == 1000
 
+    def test_big_sparse(self):
+        tempf = tempfile.NamedTemporaryFile()
+        cols, rows = 200, 200
+        headers = ",".join(f"col_{i}" for i in range(cols)) + "\n"
+        tempf.write(headers.encode("utf8"))
+        targets = {249, 499, 749, 999}
+        for _ in range(rows):
+            row = ",".join(f"{j}" if j in targets else "" for j in range(cols)) + "\n"
+            tempf.write(row.encode("utf8"))
+        tempf.flush()
+
+        lazy = lazycsv.LazyCSV(tempf.name)
+        with open(tempf.name) as f:
+            reader = csv.reader(f)
+            headers = tuple(x.encode() for x in next(reader))
+            data = list(reader)
+        assert headers == lazy.headers
+        for val in range(cols):
+            expected = [i[val].encode() for i in data]
+            actual = list(lazy.sequence(col=val))
+            assert actual == expected
+
+
 class TestUnorderedFiles:
     def test_missing_col(self):
         data = "x,y,z\r\n1,2\r\n3,1,3\r\n".encode()
@@ -277,10 +301,11 @@ class TestUnorderedFiles:
         assert actual == expected
 
     def test_many_missing_cols(self):
-        data = "a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z\n\n0,0,0,0,,,,,,,,,,,,,,,,,,,,,,1\n".encode()
-        with prepped_file(data) as tempf, pytest.raises(RuntimeError) as err:
-            _ = lazycsv.LazyCSV(tempf.name)
-        assert err.type == RuntimeError
+        data = "a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z\n\n0,,,,,,,,,,,,,,,,,,,,,,,,,1\n".encode()
+        with prepped_file(data) as tempf, pytest.warns(RuntimeWarning):
+            lazy = lazycsv.LazyCSV(tempf.name)
+        assert list(lazy.sequence(col=0)) == [b"", b"0"]
+        assert list(lazy.sequence(col=25)) == [b"", b"1"]
 
     def test_extra_col(self):
         data = "x,y\r\n1,2,3\r\n4,5\r\n".encode()

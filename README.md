@@ -13,23 +13,30 @@ allows a user to generate PyObject's from a csv file lazily.
 The parser works as follows:
 
 First, The user file is memory-mapped internally to the LazyCSV object. That
-file is used to generate two indexes; the first an index of each of the line
-endings in the CSV, and the second an index of the fields for each value in the
-CSV, relative to the previous line ending. These index files are then also
-memory-mapped, and finally the LazyCSV object is returned to the user.
+file is used to generate three indexes. The first is an index of values which
+correspond to the position in the user file where a given CSV field starts.
+This value is always between 0 and 255, so as to minimize the size of this
+index file. For index values outside this range, An "anchor point" is created,
+which is a pair of `size_t` values that mark both the value which is subtracted
+from the index value such that the index value fits within 8 bits, and the
+first column of the CSV where the anchor value applies. This anchor point is
+periodically written to the second index file when required for a given index.
+Finally, the third index writes the index of the first anchor point for each
+row of the file.
 
 When a user requests a sequence of data (i.e. a row or a column), an iterator
 is created and returned. This iterator uses the value of the requested sequence
 and its internal position state to index into the index files the values
 representing the index of the requested field, and its length. Those two values
 are then used to create a single PyBytes object. These PyBytes objects are then
-yielded to the user per iteration.
+yielded to the user per-iteration.
 
 This process is lazy, only yielding data from the user file as the iterator is
 consumed. It does not cache results as they are generated - it is the
 responsibility of the user to store in physical memory the data which must be
 persisted. The only persisted overhead in physical memory is the LazyCSV object
-itself, any created iterators, and optionally the headers of the CSV file.
+itself, any created iterators, a small cache of common length-0 and length-1
+`PyObject*`'s for fast returns, and optionally the headers of the CSV file.
 
 ```python
 >>> import os.path
@@ -105,69 +112,67 @@ behavior can be disabled by passing `unquoted=False` to the object constructor.
 ### Benchmarks (CPU)
 
 ```
-root@f2612b113d10:/code# python tests/benchmark_lazy.py
+root@aa9d7c7ffb59:/code# python tests/benchmark_lazy.py
 filesize: 0.134gb
 cols=10000
 rows=10000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 0.7147269690176472
-parsing cols... time to parse: 0.995767368003726
-total time: 1.7104943370213732
-
-benchmarking polars:
-creating polars df... time to object: 2.505466743001307
-parsing cols... time to parse: 1.3182334439989063
-total time: 3.823700187000213
+indexing lazy... time to index: 0.44364099399899715
+parsing cols... time to parse: 3.0821814209994045
+total time: 3.5258224149984017
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
-creating datatables frame... time to object: 0.4007758339994325
-parsing cols... time to parse: 3.6466693760012276
-total time: 4.04744521000066
+creating datatables frame... time to object: 0.40828132900060154
+parsing cols... time to parse: 3.810204313998838
+total time: 4.21848564299944
+
+benchmarking polars (read):
+creating polars df... time to object: 2.357821761001105
+parsing cols... time to parse: 1.3874979300017003
+total time: 3.7453196910028055
 ```
 
 ```
-root@f2612b113d10:/code# python tests/benchmark_lazy.py
+root@aa9d7c7ffb59:/code# python tests/benchmark_lazy.py
 filesize: 1.387gb
 cols=10000
 rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 7.119601220998447
-parsing cols... time to parse: 11.85147767199669
-total time: 18.971078892995138
-
-benchmarking polars:
-creating polars df... time to object: 23.82051394299924
-parsing cols... time to parse: 12.816952474997379
-total time: 36.63746641799662
+indexing lazy... time to index: 4.054390757999499
+parsing cols... time to parse: 65.48354616199867
+total time: 69.53793691999817
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
-creating datatables frame... time to object: 2.3516600279999693
-parsing cols... time to parse: 35.72737046200018
-total time: 38.07903049000015
+creating datatables frame... time to object: 2.4456441220027045
+parsing cols... time to parse: 37.424315700998704
+total time: 39.86995982300141
+
+benchmarking polars (read):
+creating polars df... time to object: 22.383294907001982
+parsing cols... time to parse: 14.16580996599805
+total time: 36.54910487300003
 ```
 
 ```
-root@f2612b113d10:/code# python tests/benchmark_lazy.py
 filesize: 14.333gb
 cols=100000
 rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 72.66899809299503
-parsing cols... time to parse: 260.63739303901093
-total time: 333.30639113200596
-
-benchmarking polars:
-Killed
+indexing lazy... time to index: 45.171728016001
+parsing cols... time to parse: 1347.6434365789974
+total time: 1392.8151645949984
 
 benchmarking datatable:
  58% |█████████████████████████████▍                    | Reading data Killed
-```
 
+benchmarking polars (read):
+Killed
+```

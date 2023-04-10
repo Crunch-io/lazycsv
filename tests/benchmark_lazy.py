@@ -180,10 +180,11 @@ def main():
         # "pandas": run_pandas,
         # "pyarrow": run_pyarrow,
         "lazycsv": run_lazy,
-        # "datatable": run_datatable,
-        # "polars (read)": run_polars_read,
+        "datatable": run_datatable,
+        "polars (read)": run_polars_read,
         # "polars (scan)": run_polars_scan,
     }
+
 
     filename = f"benchmark_{rows}r_{cols}c_{int(sparsity*100)}%.csv"
 
