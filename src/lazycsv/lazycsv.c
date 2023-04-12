@@ -70,9 +70,9 @@ typedef struct {
 typedef struct {
     PyObject_HEAD
     PyObject* headers;
+    PyObject* name;
     size_t rows;
     size_t cols;
-    char* name;
     int _skip_headers;
     int _unquote;
     char _newline;
@@ -358,7 +358,7 @@ static PyTypeObject LazyCSV_IterType = {
 };
 
 
-static void _TempDir_AsString(PyObject** tempdir, char** dirname) {
+static inline void _TempDir_AsString(PyObject** tempdir, char** dirname) {
     PyObject* tempfile = PyImport_ImportModule("tempfile");
     PyObject* tempdir_obj = PyObject_GetAttrString(
         tempfile, "TemporaryDirectory"
@@ -375,12 +375,62 @@ static void _TempDir_AsString(PyObject** tempdir, char** dirname) {
     Py_DECREF(dirstring);
 }
 
+static inline void _FullName_FromName(PyObject *name, PyObject **fullname_obj,
+                               char **fullname) {
+
+    PyObject *os_path = PyImport_ImportModule("os.path");
+    PyObject *builtins = PyImport_ImportModule("builtins");
+
+    PyObject* global_vars = PyObject_CallMethod(builtins, "globals", NULL);
+
+    PyObject* dirname;
+
+    // borrowed ref
+    PyObject* __file__ = PyDict_GetItemString(global_vars, "__file__");
+
+    if (!__file__) {
+        // if run in say, the python shell, there is no __file__, so use cwd
+        // of the interpreter
+        PyObject *os = PyImport_ImportModule("os");
+        dirname = PyObject_CallMethod(os, "getcwd", NULL);
+        Py_DECREF(os);
+    } else {
+        dirname = PyObject_CallMethod(os_path, "dirname", "O", __file__);
+    }
+
+    PyObject *abspath =
+        PyObject_CallMethod(os_path, "abspath", "O", name);
+
+    PyObject *str = PyObject_GetAttrString(builtins, "str");
+    PyObject *startswith =
+        PyObject_CallMethod(str, "startswith", "OO", abspath, dirname);
+
+    if (startswith == Py_True) {
+        *fullname_obj = PyUnicode_AsUTF8String(abspath);
+        *fullname = PyBytes_AsString(*fullname_obj);
+    }
+    else {
+        PyObject *joined =
+            PyObject_CallMethod(os_path, "join", "(OO)", dirname, name);
+        *fullname_obj = PyUnicode_AsUTF8String(joined);
+        *fullname = PyBytes_AsString(*fullname_obj);
+        Py_DECREF(joined);
+    }
+
+    Py_DECREF(os_path);
+    Py_DECREF(builtins);
+    Py_DECREF(global_vars);
+    Py_DECREF(dirname);
+    Py_DECREF(abspath);
+    Py_DECREF(str);
+    Py_DECREF(startswith);
+}
 
 static PyObject* LazyCSV_New(
         PyTypeObject* type, PyObject* args, PyObject* kwargs
 ) {
 
-    char* fullname;
+    PyObject* name;
     int skip_headers = 0;
     int unquote = 1;
     Py_ssize_t buffer_capacity = 2097152; // 2**21
@@ -391,7 +441,7 @@ static PyObject* LazyCSV_New(
     };
 
     char ok = PyArg_ParseTupleAndKeywords(
-        args, kwargs, "s|ppns", kwlist, &fullname,
+        args, kwargs, "O|ppns", kwlist, &name,
         &skip_headers, &unquote, &buffer_capacity, &dirname
     );
 
@@ -411,13 +461,17 @@ static PyObject* LazyCSV_New(
         return NULL;
     }
 
+    PyObject* fullname_obj;
+    char* fullname;
+    _FullName_FromName(name, &fullname_obj, &fullname);
+
     int ufd = open(fullname, O_RDONLY);
     if (ufd == -1) {
         PyErr_SetString(
             PyExc_FileNotFoundError,
             "unable to open data file,"
             " check to be sure that the user has read permissions"
-            " and/or ownership of the file, that the file exists."
+            " and/or ownership of the file, and that the file exists."
         );
         return NULL;
     }
@@ -445,7 +499,7 @@ static PyObject* LazyCSV_New(
     char* anchor_index = tempnam(dirname, "LzyA_");
     char* newline_index = tempnam(dirname, "LzyN_");
 
-    int file_flags = O_WRONLY|O_CREAT|O_APPEND;
+    int file_flags = O_WRONLY|O_CREAT|O_EXCL;
 
     int comma_file = open(comma_index, file_flags, S_IRWXU);
     int anchor_file = open(anchor_index, file_flags, S_IRWXU);
@@ -761,7 +815,7 @@ static PyObject* LazyCSV_New(
 
     self->rows = rows;
     self->cols = cols;
-    self->name = fullname;
+    self->name = fullname_obj;
     self->headers = headers;
     self->_skip_headers = skip_headers;
     self->_unquote = unquote;
@@ -809,6 +863,8 @@ static void LazyCSV_Destruct(LazyCSV* self) {
     free(self->_cache);
 
     Py_DECREF(self->headers);
+    Py_DECREF(self->name);
+
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -873,7 +929,7 @@ static PyMemberDef LazyCSVMembers[] = {
     {"headers", T_OBJECT, offsetof(LazyCSV, headers), READONLY, "header tuple"},
     {"rows", T_LONG, offsetof(LazyCSV, rows), READONLY, "row length"},
     {"cols", T_LONG, offsetof(LazyCSV, cols), READONLY, "col length"},
-    {"name", T_STRING, offsetof(LazyCSV, name), READONLY, "file name"},
+    {"name", T_OBJECT, offsetof(LazyCSV, name), READONLY, "file name"},
     {NULL, }
 };
 

@@ -54,8 +54,9 @@ def test_demo():
 
 
 class TestLazyCSV:
-    def test_headers(self, lazy):
-        assert lazy.name == os.path.abspath(FPATH)
+    def test_attributes(self):
+        lazy = lazycsv.LazyCSV("fixtures/file.csv")
+        assert lazy.name == os.path.abspath(FPATH).encode()
         assert lazy.headers == (b"", b"ALPHA", b"BETA")
 
     def test_more_headers(self):
@@ -232,7 +233,7 @@ class TestLazyCSVOptions:
 
 
 class TestCRLF:
-    def test_crlf(self):
+    def test_crlf1(self):
         fpath = os.path.join(HERE, "fixtures/file_crlf.csv")
         lazy = lazycsv.LazyCSV(fpath)
 
