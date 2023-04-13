@@ -48,23 +48,15 @@ typedef struct {
     struct stat st;
     char* name;
     char* data;
-} LazyCSV_IndexFile;
+} LazyCSV_File;
 
 
 typedef struct {
     PyObject* dir;
-    LazyCSV_IndexFile* commas;
-    LazyCSV_IndexFile* anchors;
-    LazyCSV_IndexFile* newlines;
+    LazyCSV_File* commas;
+    LazyCSV_File* anchors;
+    LazyCSV_File* newlines;
 } LazyCSV_Index;
-
-
-typedef struct {
-    int fd;
-    char* name;
-    char* data;
-    struct stat st;
-} LazyCSV_Data;
 
 
 typedef struct {
@@ -77,7 +69,7 @@ typedef struct {
     int _unquote;
     char _newline;
     LazyCSV_Index* _index;
-    LazyCSV_Data* _data;
+    LazyCSV_File* _data;
     LazyCSV_Cache* _cache;
 } LazyCSV;
 
@@ -96,7 +88,7 @@ typedef struct {
 static inline void _BufferWrite(
     int fd, WriteBuffer* buffer, void* data, size_t size
 ) {
-    if (buffer->size + (Py_ssize_t)size >= buffer->capacity) {
+    if (buffer->size + size >= buffer->capacity) {
         write(fd, buffer->data, buffer->size);
         buffer->size = 0;
     }
@@ -121,14 +113,13 @@ static inline void _Value_ToDisk(
     Py_ssize_t target = value - apnt->value;
 
     if (target > UCHAR_MAX) {
-        apnt->value = value;
-        apnt->col = col_index+1;
+        *apnt = (LazyCSV_AnchorPoint){.value = value, .col = col_index+1};
         _BufferWrite(afile, abuf, apnt, sizeof(LazyCSV_AnchorPoint));
         ridx->count += 1;
         target = 0;
     }
 
-    unsigned char item = (unsigned char)target;
+    unsigned char item = target;
 
     _BufferWrite(cfile, cbuf, &item, sizeof(char));
 }
@@ -376,14 +367,14 @@ static inline void _TempDir_AsString(PyObject** tempdir, char** dirname) {
 }
 
 static inline void _FullName_FromName(PyObject *name, PyObject **fullname_obj,
-                               char **fullname) {
+                                      char **fullname) {
 
     PyObject *os_path = PyImport_ImportModule("os.path");
     PyObject *builtins = PyImport_ImportModule("builtins");
 
     PyObject* global_vars = PyObject_CallMethod(builtins, "globals", NULL);
 
-    PyObject* dirname;
+    PyObject* _dirname;
 
     // borrowed ref
     PyObject* __file__ = PyDict_GetItemString(global_vars, "__file__");
@@ -392,27 +383,33 @@ static inline void _FullName_FromName(PyObject *name, PyObject **fullname_obj,
         // if run in say, the python shell, there is no __file__, so use cwd
         // of the interpreter
         PyObject *os = PyImport_ImportModule("os");
-        dirname = PyObject_CallMethod(os, "getcwd", NULL);
+        _dirname = PyObject_CallMethod(os, "getcwd", NULL);
         Py_DECREF(os);
-    } else {
-        dirname = PyObject_CallMethod(os_path, "dirname", "O", __file__);
     }
 
-    PyObject *abspath =
-        PyObject_CallMethod(os_path, "abspath", "O", name);
+    else {
+        _dirname = PyObject_CallMethod(os_path, "dirname", "O", __file__);
+    }
 
-    PyObject *str = PyObject_GetAttrString(builtins, "str");
+    PyObject *dirname = PyUnicode_AsUTF8String(_dirname);
+    Py_DECREF(_dirname);
+
+    PyObject *abspath = PyObject_CallMethod(os_path, "abspath", "O", name);
+
+    PyObject *bytes = PyObject_GetAttrString(builtins, "bytes");
     PyObject *startswith =
-        PyObject_CallMethod(str, "startswith", "OO", abspath, dirname);
+        PyObject_CallMethod(bytes, "startswith", "OO", abspath, dirname);
 
     if (startswith == Py_True) {
-        *fullname_obj = PyUnicode_AsUTF8String(abspath);
-        *fullname = PyBytes_AsString(*fullname_obj);
+        *fullname_obj = abspath;
+        Py_INCREF(abspath);
+        *fullname = PyBytes_AsString(abspath);
     }
+
     else {
         PyObject *joined =
             PyObject_CallMethod(os_path, "join", "(OO)", dirname, name);
-        *fullname_obj = PyUnicode_AsUTF8String(joined);
+        *fullname_obj = PyObject_CallMethod(os_path, "abspath", "O", joined);
         *fullname = PyBytes_AsString(*fullname_obj);
         Py_DECREF(joined);
     }
@@ -422,7 +419,7 @@ static inline void _FullName_FromName(PyObject *name, PyObject **fullname_obj,
     Py_DECREF(global_vars);
     Py_DECREF(dirname);
     Py_DECREF(abspath);
-    Py_DECREF(str);
+    Py_DECREF(bytes);
     Py_DECREF(startswith);
 }
 
@@ -461,9 +458,27 @@ static PyObject* LazyCSV_New(
         return NULL;
     }
 
+    Py_INCREF(name);
+    if (PyUnicode_CheckExact(name)) {
+        PyObject* _name = PyUnicode_AsUTF8String(name);
+        Py_DECREF(name);
+        name = _name;
+    }
+
+    if (!PyBytes_CheckExact(name)) {
+        PyErr_SetString(
+            PyExc_ValueError,
+            "first argument must be str or bytes"
+        );
+        Py_DECREF(name);
+        return NULL;
+    }
+
     PyObject* fullname_obj;
     char* fullname;
     _FullName_FromName(name, &fullname_obj, &fullname);
+
+    Py_DECREF(name);
 
     int ufd = open(fullname, O_RDONLY);
     if (ufd == -1) {
@@ -578,12 +593,13 @@ static PyObject* LazyCSV_New(
                     "column overflow encountered while parsing CSV, "
                     "extra values will be truncated!";
                 overflow = i;
+
                 for (;;) {
-                  if (file[overflow] == LINE_FEED ||
-                      file[overflow] == CARRIAGE_RETURN)
-                    break;
-                  else if (overflow >= file_len)
-                    break;
+                    if (file[overflow] == LINE_FEED ||
+                        file[overflow] == CARRIAGE_RETURN)
+                        break;
+                    else if (overflow >= file_len)
+                        break;
                   overflow += 1;
                 }
             }
@@ -637,7 +653,7 @@ static PyObject* LazyCSV_New(
     }
 
     char last_char = file[file_len - 1];
-    char overcount = !!(last_char == CARRIAGE_RETURN || last_char == LINE_FEED);
+    char overcount = last_char == CARRIAGE_RETURN || last_char == LINE_FEED;
 
     if (!overcount) {
         _Value_ToDisk(file_len + 1, &ridx, &apnt, col_index, comma_file,
@@ -778,23 +794,22 @@ static PyObject* LazyCSV_New(
     _cache->empty = PyBytes_FromString("");
     _cache->items = malloc(UCHAR_MAX*sizeof(PyObject*));
 
-    for (size_t i = 0; i < UCHAR_MAX; i++) {
+    for (size_t i = 0; i < UCHAR_MAX; i++)
         _cache->items[i] = PyBytes_FromFormat("%c", (int)i);
-    }
 
-    LazyCSV_IndexFile* _commas = malloc(sizeof(LazyCSV_IndexFile));
+    LazyCSV_File* _commas = malloc(sizeof(LazyCSV_File));
     _commas->name = comma_index;
     _commas->data = comma_memmap;
     _commas->st = comma_st;
     _commas->fd = comma_fd;
 
-    LazyCSV_IndexFile* _anchors = malloc(sizeof(LazyCSV_IndexFile));
+    LazyCSV_File* _anchors = malloc(sizeof(LazyCSV_File));
     _anchors->name = anchor_index;
     _anchors->data = anchor_memmap;
     _anchors->st = anchor_st;
     _anchors->fd = anchor_fd;
 
-    LazyCSV_IndexFile* _newlines = malloc(sizeof(LazyCSV_IndexFile));
+    LazyCSV_File* _newlines = malloc(sizeof(LazyCSV_File));
     _newlines->name = newline_index;
     _newlines->data = newline_memmap;
     _newlines->st = newline_st;
@@ -807,7 +822,7 @@ static PyObject* LazyCSV_New(
     _index->newlines = _newlines;
     _index->anchors = _anchors;
 
-    LazyCSV_Data* _data = malloc(sizeof(LazyCSV_Data));
+    LazyCSV_File* _data = malloc(sizeof(LazyCSV_File));
     _data->name = fullname;
     _data->fd = ufd;
     _data->data = file;

@@ -19,6 +19,7 @@ def lazy():
     lazy = lazycsv.LazyCSV(FPATH)
     yield lazy
 
+
 @pytest.fixture
 def file_1000r_1000c():
     tempf = tempfile.NamedTemporaryFile()
@@ -46,18 +47,21 @@ def test_demo():
     actual = b"INDEX,A,B\n0,,2\n,,5"
     with prepped_file(actual) as tempf:
         lazy = lazycsv.LazyCSV(tempf.name)
-        data = tuple(
-            tuple(lazy.sequence(col=c))
-            for c in range(lazy.cols)
-        )
-    assert data == ((b'0', b''), (b'', b''), (b'2', b'5'))
+        data = tuple(tuple(lazy.sequence(col=c)) for c in range(lazy.cols))
+    assert data == ((b"0", b""), (b"", b""), (b"2", b"5"))
 
 
 class TestLazyCSV:
     def test_attributes(self):
-        lazy = lazycsv.LazyCSV("fixtures/file.csv")
+        lazy = lazycsv.LazyCSV(b"../tests/fixtures/file.csv")
         assert lazy.name == os.path.abspath(FPATH).encode()
         assert lazy.headers == (b"", b"ALPHA", b"BETA")
+
+    def test_bad_file_arg(self):
+        with pytest.raises(ValueError) as err:
+            _ = lazycsv.LazyCSV(1)
+        (_str,) = err.value.args
+        assert _str == "first argument must be str or bytes"
 
     def test_more_headers(self):
         actual = b"INDEX,,AA,B,CC,D,EE\n0,1,2,3,4,5,6\n"
@@ -91,17 +95,17 @@ class TestLazyCSV:
         actual = b"INDEX,ATTR\n0,a\n1,b\n2,c\n3,d\n"
         with prepped_file(actual) as tempf:
             lazy = lazycsv.LazyCSV(tempf.name)
-            assert list(lazy.sequence(col=0)) == [b'0', b"1", b"2", b"3"]
-            assert list(lazy.sequence(col=1)) == [b'a', b"b", b"c", b"d"]
-            assert lazy.headers == (b'INDEX', b'ATTR')
+            assert list(lazy.sequence(col=0)) == [b"0", b"1", b"2", b"3"]
+            assert list(lazy.sequence(col=1)) == [b"a", b"b", b"c", b"d"]
+            assert lazy.headers == (b"INDEX", b"ATTR")
             assert lazy.rows, lazy.cols == (4, 2)
 
     def test_get_actual_col_skip_headers(self):
         actual = b"INDEX,ATTR\n0,a\n1,b\n2,c\n3,d\n"
         with prepped_file(actual) as tempf:
             lazy = lazycsv.LazyCSV(tempf.name, skip_headers=True)
-            assert list(lazy.sequence(col=0)) == [b"INDEX", b'0', b"1", b"2", b"3"]
-            assert list(lazy.sequence(col=1)) == [b"ATTR", b'a', b"b", b"c", b"d"]
+            assert list(lazy.sequence(col=0)) == [b"INDEX", b"0", b"1", b"2", b"3"]
+            assert list(lazy.sequence(col=1)) == [b"ATTR", b"a", b"b", b"c", b"d"]
             assert lazy.headers == ()
             assert lazy.rows, lazy.cols == (4, 2)
 
@@ -112,7 +116,7 @@ class TestLazyCSV:
             actual = list(list(lazy.sequence(col=i)) for i in range(lazy.cols))
 
         assert lazy.rows, lazy.cols == (3, 2)
-        assert actual == [[b'INDEX', b'0', b"1"], [b'ATTR', b'a', b"b"]]
+        assert actual == [[b"INDEX", b"0", b"1"], [b"ATTR", b"a", b"b"]]
         assert lazy.headers == ()
 
     def test_get_row(self, lazy):
@@ -135,7 +139,7 @@ class TestLazyCSV:
             col0 = list(lazy.sequence(col=0))
 
             actual = [col0, col1]
-            assert actual == [[b'', b''], [b'', b'']]
+            assert actual == [[b"", b""], [b"", b""]]
             assert lazy.rows, lazy.cols == (2, 3)
 
     def test_empty_skipped_headers_csv(self):
@@ -144,8 +148,9 @@ class TestLazyCSV:
             lazy = lazycsv.LazyCSV(tempf.name, skip_headers=True)
             actual = list(list(lazy.sequence(col=i)) for i in range(lazy.cols))
         assert lazy.rows, lazy.cols == (3, 2)
-        assert actual == [[b'', b'', b''], [b'', b'', b'']]
+        assert actual == [[b"", b"", b""], [b"", b"", b""]]
         assert lazy.headers == ()
+
 
 class TestLazyCSVOptions:
     def test_get_skipped_header_column(self):
@@ -265,7 +270,7 @@ class TestBigFiles:
         assert len(actual) == 1000
 
     def test_variable_buffer_size(self, file_1000r_1000c):
-        lazy = lazycsv.LazyCSV(file_1000r_1000c.name, buffer_size=10**7)
+        lazy = lazycsv.LazyCSV(file_1000r_1000c.name, buffer_size=10 ** 7)
         actual = list(lazy.sequence(col=0))
         assert len(actual) == 1000
 
@@ -324,30 +329,31 @@ class TestUnorderedFiles:
         expected = [[b"x", b"", b"4"]]
         assert actual == expected
 
+
 class TestEdgecases:
     def test_many_files_separators(self):
         for sep in ("\n", "\r", "\r\n"):
             for i in range(250, 265):
-                header = "A"*i
+                header = "A" * i
                 data = f"{header}{sep}1{sep}2"
                 with prepped_file(data.encode()) as tempf:
                     lazy = lazycsv.LazyCSV(tempf.name)
                     actual = list(lazy.sequence(col=0))
                     headers = lazy.headers
                 assert actual == [b"1", b"2"]
-                assert headers == (header.encode(), )
+                assert headers == (header.encode(),)
 
     def test_many_empty_files_separators(self):
         for sep in ("\n", "\r", "\r\n"):
             for i in range(250, 261):
-                header = "A"*i
+                header = "A" * i
                 data = f"{header}{sep}{sep}"
                 with prepped_file(data.encode()) as tempf:
                     lazy = lazycsv.LazyCSV(tempf.name)
                     actual = list(lazy.sequence(col=0))
                     headers = lazy.headers
                 assert actual == [b""]
-                assert headers == (header.encode(), )
+                assert headers == (header.encode(),)
 
     def test_many_empty_files_separators_many_cols(self):
         for sep in ("\n", "\r", "\r\n"):
@@ -356,7 +362,7 @@ class TestEdgecases:
                     header = ",".join(item for _ in range(n))
                     data = ""
                     for _ in range(n):
-                        data += header+sep
+                        data += header + sep
                     with prepped_file(data.encode()) as tempf:
                         lazy = lazycsv.LazyCSV(tempf.name)
                         actual = list(lazy.sequence(col=0))
@@ -370,7 +376,7 @@ class TestEdgecases:
             lazy = lazycsv.LazyCSV(tempf.name)
             actual = list(lazy.sequence(col=0))
             headers = lazy.headers
-            assert headers == (b"HEADER", )
+            assert headers == (b"HEADER",)
             assert actual == [b"", b"1", b"", b"2", b"", b"", b"3"]
 
     def test_sparse_crlf_column(self):
@@ -379,7 +385,7 @@ class TestEdgecases:
             lazy = lazycsv.LazyCSV(tempf.name)
             actual = list(lazy.sequence(col=0))
             headers = lazy.headers
-            assert headers == (b"HEADER", )
+            assert headers == (b"HEADER",)
             assert actual == [b"", b"1", b"", b"2", b"", b"", b"3"]
 
     def test_getitem_with_crlf_newline_at_eof(self):
@@ -466,4 +472,3 @@ class TestEdgecases:
             [b" Amazonas", b" Amazonas", b" Amazonas", b" Amazonas"],
         ]
         assert actual == expected
-

@@ -185,7 +185,6 @@ def main():
         # "polars (scan)": run_polars_scan,
     }
 
-
     filename = f"benchmark_{rows}r_{cols}c_{int(sparsity*100)}%.csv"
 
     HERE = os.path.abspath(os.path.dirname(__file__))
@@ -203,10 +202,9 @@ def main():
         i = 0
         for i in range(rows):
             row = ",".join(
-                f"{i}x{j}" if random.random() > sparsity else ""
-                for j in range(cols)
+                f"{i}x{j}" if random.random() > sparsity else "" for j in range(cols)
             )
-            tempf.write((row+"\n").encode("utf8"))
+            tempf.write((row + "\n").encode("utf8"))
             del row
             if i % 100 == 0:
                 print(f"writing rows: {i}/{rows}", end="\r")

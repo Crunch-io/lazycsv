@@ -39,11 +39,8 @@ itself, any created iterators, a small cache of common length-0 and length-1
 `PyObject*`'s for fast returns, and optionally the headers of the CSV file.
 
 ```python
->>> import os.path
 >>> from lazycsv import lazycsv
->>> HERE = os.path.abspath(os.path.dirname(__name__))
->>> FPATH = os.path.join(HERE, "tests/fixtures/file.csv")
->>> lazy = lazycsv.LazyCSV(FPATH)
+>>> lazy = lazycsv.LazyCSV("tests/fixtures/file.csv")
 >>> lazy
 <lazycsv.LazyCSV object at 0x7f5b212ea3d0>
 >>> (col := lazy.sequence(col=0))
@@ -58,17 +55,19 @@ Traceback (most recent call last):
 StopIteration
 ```
 
-Since data is yielded per-iteraton, lazycsv pairs well with many of the builtin
-functional components of Python. This has the added benefit of keeping the
-iteration in the C level, maximizing performance.
+Since data is yielded through the iterator protocol, lazycsv pairs well with
+many of the builtin functional components of Python, and third-party libraries
+with support for iterators. This has the added benefit of keeping iterations
+in the C level, maximizing performance.
 
 ```python
->>> col = lazy.sequence(col=0)
->>> list(map(int, col))
-[0, 1]
 >>> row = lazy.sequence(row=1)
-list(map(lambda x: x.decode('utf8'), row))
+>>> list(map(lambda x: x.decode('utf8'), row))
 ['1', 'a1', 'b1']
+>>>
+>>> import numpy as np
+>>> np.fromiter(map(int, lazy.sequence(col=0)), dtype=np.int64)
+array([0, 1])
 ```
 
 Headers are by default parsed from the csv file and packaged into a tuple under
@@ -98,12 +97,12 @@ behavior can be disabled by passing `unquoted=False` to the object constructor.
 
 ```python
 >>> lazy = lazycsv.LazyCSV(
-...     os.path.join(HERE, "tests/fixtures/file_crlf2.csv")
+...    "tests/fixtures/file_crlf2.csv"
 ... )
 >>> lazy.headers
 (b'', b'This,that', b'Fizz,Buzz')
 >>> lazy = lazycsv.LazyCSV(
-...     os.path.join(HERE, "tests/fixtures/file_crlf2.csv"), unquote=False
+...     "tests/fixtures/file_crlf2.csv", unquote=False
 ... )
 >>> lazy.headers
 (b'', b'"This,that"', b'"Fizz,Buzz"')
