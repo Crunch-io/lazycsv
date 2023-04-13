@@ -6,6 +6,9 @@ extensions = [
     Extension(
         "lazycsv.lazycsv",
         [os.path.join("src", "lazycsv", "lazycsv.c")],
+        define_macros=[
+            ("INDEX_DTYPE", "short")
+        ]
     )
 ]
 
@@ -14,7 +17,7 @@ with open("README.md", "r") as f:
 
 setup(
     name="lazycsv",
-    version="0.0.1",
+    version="1.0.0",
     author="Michael Green, Chris Perkins",
     author_email="dev@crunch.io",
     description="an OOM csv parser",
@@ -25,6 +28,17 @@ setup(
         "test": ["pytest"],
         "benchmarks": ["datatable", "pandas", "pyarrow", "polars"],
     },
+    classifiers=[
+        "Development Status :: 5 - Production",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: MIT License",
+        "Natural Language :: English",
+        "Operating System :: POSIX",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: Implementation :: CPython"
+        "Topic :: Utilities",
+    ],
     package_dir={"": "src"},
     ext_modules=extensions,
 )

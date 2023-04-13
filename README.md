@@ -15,14 +15,15 @@ The parser works as follows:
 First, The user file is memory-mapped internally to the LazyCSV object. That
 file is used to generate three indexes. The first is an index of values which
 correspond to the position in the user file where a given CSV field starts.
-This value is always between 0 and 255, so as to minimize the size of this
-index file. For index values outside this range, An "anchor point" is created,
-which is a pair of `size_t` values that mark both the value which is subtracted
-from the index value such that the index value fits within 8 bits, and the
-first column of the CSV where the anchor value applies. This anchor point is
-periodically written to the second index file when required for a given index.
-Finally, the third index writes the index of the first anchor point for each
-row of the file.
+This value is always an `unsigned short`, which we found to be the optimal bit
+size for disk usage and execution performance (this can be adjusted in the
+setup.py file). For index values outside the range of an unsigned short, An
+"anchor point" is created, which is a pair of `size_t` values that mark both
+the value which is subtracted from the index value such that the index value
+fits within 16 bits, and the first column of the CSV where the anchor value
+applies. This anchor point is periodically written to the second index file
+when required for a given index. Finally, the third index writes the index of
+the first anchor point for each row of the file.
 
 When a user requests a sequence of data (i.e. a row or a column), an iterator
 is created and returned. This iterator uses the value of the requested sequence
@@ -118,9 +119,9 @@ rows=10000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 0.44364099399899715
-parsing cols... time to parse: 3.0821814209994045
-total time: 3.5258224149984017
+indexing lazy... time to index: 0.5116381410043687
+parsing cols... time to parse: 1.5931394950021058
+total time: 2.1047776360064745
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
@@ -142,9 +143,9 @@ rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 4.054390757999499
-parsing cols... time to parse: 65.48354616199867
-total time: 69.53793691999817
+indexing lazy... time to index: 4.990824360997067
+parsing cols... time to parse: 19.573407171003055
+total time: 24.56423153200012
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
@@ -165,9 +166,9 @@ rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 45.171728016001
-parsing cols... time to parse: 1347.6434365789974
-total time: 1392.8151645949984
+indexing lazy... time to index: 58.97352126000624
+parsing cols... time to parse: 508.8208989979903
+total time: 567.7944202579965
 
 benchmarking datatable:
  58% |█████████████████████████████▍                    | Reading data Killed

@@ -172,16 +172,16 @@ def main():
     cols = 200000
     rows = 3000000
 
-    cols = 100000
-    rows = 100000
+    cols = 10000
+    rows = 10000
     sparsity = 0.95
 
     benchmarks = {
+        "lazycsv": run_lazy,
         # "pandas": run_pandas,
         # "pyarrow": run_pyarrow,
-        "lazycsv": run_lazy,
-        "datatable": run_datatable,
-        "polars (read)": run_polars_read,
+        # "datatable": run_datatable,
+        # "polars (read)": run_polars_read,
         # "polars (scan)": run_polars_scan,
     }
 
