@@ -15,17 +15,26 @@
 #define LINE_FEED 10
 #define CARRIAGE_RETURN 13
 
-// users can set this macro in setup.py if you want to be more aggressive
-// with minimizing index disk usage (i.e. define INDEX_DTYPE as char)
-// but at a cost to performance.
+// users can set this macro using the env variable LAZYCSV_INDEX_DTYPE if you
+// want to be more aggressive with minimizing index disk usage (i.e. define
+// INDEX_DTYPE as char) but at a cost to performance.
 #ifndef INDEX_DTYPE
 #define INDEX_DTYPE short
 #endif
 
+#ifdef DEBUG
+void PyDebug() {return;}
+#endif
+
+// optionally include methods on the iterable to materialize into a numpy
+// array, requires numpy install and to be set explicitly using env variable
+// LAZYCSV_INCLUDE_NUMPY=1
+#ifdef INCLUDE_NUMPY
+#define INCLUDE_NUMPY 0
+#endif
+
 static size_t INDEX_DTYPE_UMAX =
     ((unsigned INDEX_DTYPE) ~(unsigned INDEX_DTYPE)0);
-
-void PyDebug() {return;}
 
 
 typedef struct {
@@ -180,11 +189,9 @@ static inline size_t _Value_FromIndex(size_t value, LazyCSV_RowIndex *ridx,
     return cval+aval;
 }
 
-
-static inline PyObject* LazyCSV_IterCol(LazyCSV_Iter* iter) {
-    LazyCSV* lazy = (LazyCSV*)iter->lazy;
-
-    PyObject* result = NULL;
+static inline void LazyCSV_IterCol(LazyCSV_Iter *iter, size_t *offset,
+                                   size_t *len) {
+    LazyCSV *lazy = (LazyCSV *)iter->lazy;
 
     if (iter->position < lazy->rows) {
 
@@ -213,50 +220,14 @@ static inline PyObject* LazyCSV_IterCol(LazyCSV_Iter* iter) {
         size_t cs = _Value_FromIndex(iter->col, ridx, cidx, aidx);
         size_t ce = _Value_FromIndex(iter->col + 1, ridx, cidx, aidx);
 
-        size_t len = ce - cs - 1;
-        char* addr;
-
-        switch (len) {
-        case SIZE_MAX:
-        case 0:
-            // short circuit if result is empty string
-            result = lazy->_cache->empty;
-            Py_INCREF(result);
-            break;
-        case 1:
-            addr = lazy->_data->data + cs;
-            result = lazy->_cache->items[(size_t)*addr];
-            Py_INCREF(result);
-            break;
-        default:
-            addr = lazy->_data->data + cs;
-
-            char strip_quotes = (
-                lazy->_unquote
-                && addr[0] == DOUBLE_QUOTE
-                && addr[len-1] == DOUBLE_QUOTE
-            );
-
-            if (strip_quotes) {
-                addr = addr+1;
-                len = len-2;
-            }
-
-            result = PyBytes_FromStringAndSize(addr, len);
-        }
+        *len = ce - cs - 1;
+        *offset = cs;
     }
-    else {
-        PyErr_SetNone(PyExc_StopIteration);
-    }
-
-    return result;
 }
 
-
-static inline PyObject* LazyCSV_IterRow(LazyCSV_Iter* iter) {
-    LazyCSV* lazy = (LazyCSV*)iter->lazy;
-
-    PyObject* result = NULL;
+static inline void LazyCSV_IterRow(LazyCSV_Iter *iter, size_t *offset,
+                                        size_t *len) {
+    LazyCSV *lazy = (LazyCSV *)iter->lazy;
 
     if (iter->position < lazy->cols) {
         size_t position = iter->reversed ?
@@ -277,61 +248,72 @@ static inline PyObject* LazyCSV_IterRow(LazyCSV_Iter* iter) {
         char* aidx = anchors+ridx->index;
         char* cidx = commas+((lazy->cols+1)*row*sizeof(INDEX_DTYPE));
 
-        Py_ssize_t cs = _Value_FromIndex(position, ridx, cidx, aidx);
-        Py_ssize_t ce = _Value_FromIndex(position + 1, ridx, cidx, aidx);
+        size_t cs = _Value_FromIndex(position, ridx, cidx, aidx);
+        size_t ce = _Value_FromIndex(position + 1, ridx, cidx, aidx);
 
-        size_t len = ce - cs - 1;
-
-        char* addr;
-
-        switch (len) {
-        case SIZE_MAX:
-        case 0:
-            // short circuit if result is empty string
-            result = lazy->_cache->empty;
-            Py_INCREF(result);
-        case 1:
-            addr = lazy->_data->data + cs;
-            result = lazy->_cache->items[(size_t)*addr];
-            Py_INCREF(result);
-        default:
-            addr = lazy->_data->data + cs;
-
-            char strip_quotes = (
-                lazy->_unquote
-                && addr[0] == DOUBLE_QUOTE
-                && addr[len-1] == DOUBLE_QUOTE
-            );
-
-            if (strip_quotes) {
-                addr = addr+1;
-                len = len-2;
-            }
-
-            result = PyBytes_FromStringAndSize(addr, len);
-        }
+        *len = ce - cs - 1;
+        *offset = cs;
     }
-    else {
-        PyErr_SetNone(PyExc_StopIteration);
-    }
-
-    return result;
 }
-
 
 static PyObject* LazyCSV_IterNext(PyObject* self) {
     LazyCSV_Iter* iter = (LazyCSV_Iter*)self;
+    LazyCSV *lazy = (LazyCSV *)iter->lazy;
+
+    size_t offset=SIZE_MAX, len;
+
     if (iter->col != SIZE_MAX) {
-        return LazyCSV_IterCol(iter);
+        LazyCSV_IterCol(iter, &offset, &len);
     }
-    if (iter->row != SIZE_MAX) {
-        return LazyCSV_IterRow(iter);
+    else if (iter->row != SIZE_MAX) {
+        LazyCSV_IterRow(iter, &offset, &len);
     }
-    PyErr_SetString(
-        PyExc_RuntimeError,
-        "could not determine axis for materialization"
-    );
-    return NULL;
+    else {
+        PyErr_SetString(
+            PyExc_RuntimeError,
+            "could not determine axis for materialization"
+        );
+        return NULL;
+    }
+
+    if (offset==SIZE_MAX) {
+        PyErr_SetNone(PyExc_StopIteration);
+        return NULL;
+    }
+
+    PyObject* result;
+    char* addr;
+
+    switch (len) {
+    case SIZE_MAX:
+    case 0:
+        // short circuit if result is empty string
+        result = lazy->_cache->empty;
+        Py_INCREF(result);
+        break;
+    case 1:
+        addr = lazy->_data->data + offset;
+        result = lazy->_cache->items[(size_t)*addr];
+        Py_INCREF(result);
+        break;
+    default:
+        addr = lazy->_data->data + offset;
+
+        char strip_quotes = (
+            lazy->_unquote
+            && addr[0] == DOUBLE_QUOTE
+            && addr[len-1] == DOUBLE_QUOTE
+        );
+
+        if (strip_quotes) {
+            addr = addr+1;
+            len = len-2;
+        }
+
+        result = PyBytes_FromStringAndSize(addr, len);
+    }
+
+    return result;
 }
 
 

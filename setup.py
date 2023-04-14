@@ -2,19 +2,29 @@ import os
 
 from setuptools import Extension, find_packages, setup
 
+LAZYCSV_DEBUG = int(os.environ.get("LAZYCSV_DEBUG", 0))
 LAZYCSV_INDEX_DTYPE = os.environ.get("LAZYCSV_INDEX_DTYPE", "short")
 
 # TODO: use macros to include numpy as optional dependency for fast np.array
 # materialization
-LAZYCSV_INCLUDE_NUMPY = bool(os.environ.get("LAZYCSV_INCLUDE_NUMPY", 0))
+LAZYCSV_INCLUDE_NUMPY = int(os.environ.get("LAZYCSV_INCLUDE_NUMPY", 0))
+
+include_dirs = (
+    [__import__("numpy").get_include()]
+    if LAZYCSV_INCLUDE_NUMPY
+    else []
+)
 
 extensions = [
     Extension(
         "lazycsv.lazycsv",
         [os.path.join("src", "lazycsv", "lazycsv.c")],
+        include_dirs=include_dirs,
         define_macros=[
-            ("INDEX_DTYPE", LAZYCSV_INDEX_DTYPE)
-        ]
+            ("INDEX_DTYPE", LAZYCSV_INDEX_DTYPE),
+            ("INCLUDE_NUMPY", LAZYCSV_INCLUDE_NUMPY),
+            ("DEBUG", LAZYCSV_DEBUG)
+        ],
     )
 ]
 
