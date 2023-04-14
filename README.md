@@ -22,8 +22,8 @@ setup.py file). For index values outside the range of an unsigned short, An
 the value which is subtracted from the index value such that the index value
 fits within 16 bits, and the first column of the CSV where the anchor value
 applies. This anchor point is periodically written to the second index file
-when required for a given index. Finally, the third index writes the index of
-the first anchor point for each row of the file.
+when required for a given comma index. Finally, the third index writes the
+index of the first anchor point for each row of the file.
 
 When a user requests a sequence of data (i.e. a row or a column), an iterator
 is created and returned. This iterator uses the value of the requested sequence
@@ -58,8 +58,8 @@ StopIteration
 
 Since data is yielded through the iterator protocol, lazycsv pairs well with
 many of the builtin functional components of Python, and third-party libraries
-with support for iterators. This has the added benefit of keeping iterations
-in the C level, maximizing performance.
+with support for iterators. This has the added benefit of keeping iterations in
+the C level, maximizing performance.
 
 ```python
 >>> row = lazy.sequence(row=1)
@@ -69,6 +69,20 @@ in the C level, maximizing performance.
 >>> import numpy as np
 >>> np.fromiter(map(int, lazy.sequence(col=0)), dtype=np.int64)
 array([0, 1])
+```
+
+Iterators can be materialized at any point by calling the `to_list()` or
+`to_numpy()` methods on the iterator object (to enable optional numpy support,
+see the Numpy section of this document). These methods exhaust the iterator,
+placing the remaining PyBytes values into a PyObject.
+
+```python
+>>> col = lazy.sequence(col=0)
+>>> next(col)
+b'0'
+>>> col.to_list()
+[b'1']
+>>>
 ```
 
 Headers are by default parsed from the csv file and packaged into a tuple under
@@ -83,12 +97,12 @@ responsibility of the user to make sure that columns are properly named.*
 >>> lazy.headers
 (b'', b'ALPHA', b'BETA')
 >>> (col := lazy.sequence(col=1))
-<lazycsv_iterator object at 0x7fdce5cee830>
+<lazycsv_iterator object at 0x7f599fd86b50>
 >>> list(col)
 [b'a0', b'a1']
 >>> lazy = lazycsv.LazyCSV(FPATH, skip_headers=True)
 >>> (col := lazy.sequence(col=1))
-<lazycsv_iterator object at 0x7fdce5cee830>
+<lazycsv_iterator object at 0x7f59d1b21890>
 >>> list(col)
 [b'ALPHA', b'a0', b'a1']
 ```
@@ -109,7 +123,35 @@ behavior can be disabled by passing `unquoted=False` to the object constructor.
 (b'', b'"This,that"', b'"Fizz,Buzz"')
 ```
 
-### Benchmarks (CPU)
+### Numpy
+
+Optional, opt-in numpy support is built into the module. Access to this
+extended feature set can be had by building the extension from source while
+setting a `LAZYCSV_INCLUDE_NUMPY` environment variable to `1`. This adds a
+`to_numpy()` method to the iterator, which allows iterators to materialize in a
+1-dimensional numpy array without creating intermediary PyObject*'s for each
+field of the CSV file.
+
+Access to this feature requires numpy to be preinstalled as this feature makes
+numpy a compilation dependency.
+
+```bash
+$ LAZYCSV_INCLUDE_NUMPY=1 python setup.py build_ext --inplace --force
+```
+```python
+>>> import numpy as np
+>>> from lazycsv import lazycsv
+>>> lazy = lazycsv.LazyCSV("")
+>>> lazy = lazycsv.LazyCSV("./tests/fixtures/file.csv")
+>>> lazy.sequence(col=0).to_numpy().astype(np.int8)
+array([0, 1], dtype=int8)
+```
+
+Users pinned to an older version of numpy (<1.7) may wish to instead compile
+using a `LAZYCSV_INCLUDE_NUMPY_LEGACY=1` flag, which drops the API pin in the
+module while still compiling with numpy support.
+
+#### Benchmarks (CPU)
 
 ```
 root@aa9d7c7ffb59:/code# python tests/benchmark_lazy.py

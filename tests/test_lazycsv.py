@@ -126,8 +126,7 @@ class TestLazyCSV:
         assert row_1 == [b"1", b"a1", b"b1"]
 
     def test_empty_csv(self):
-        fpath = os.path.join(HERE, "fixtures/file_empty.csv")
-        lazy = lazycsv.LazyCSV(fpath)
+        lazy = lazycsv.LazyCSV("fixtures/file_empty.csv")
         actual = [list(lazy.sequence(col=i)) for i in range(lazy.cols)]
         assert actual == [[b"", b""], [b"", b""], [b"", b""]]
 
@@ -150,6 +149,27 @@ class TestLazyCSV:
         assert lazy.rows, lazy.cols == (3, 2)
         assert actual == [[b"", b"", b""], [b"", b"", b""]]
         assert lazy.headers == ()
+
+
+class TestLazyCSVIter:
+    def test_to_list(self, lazy):
+        _iter = lazy.sequence(col=0)
+        assert _iter.to_list() == [b"0", b"1"]
+
+    def test_to_numpy(self):
+        actual = b"INDEX,ATTR\n0,a\n10,b\n100,c\n1000,d\n"
+        with prepped_file(actual) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name)
+            _iter = lazy.sequence(col=0)
+            if hasattr(_iter, "to_numpy"):
+                arr = _iter.to_numpy()
+                assert arr.tolist() == [b"0", b"10", b"100", b"1000"]
+            else:
+                raise RuntimeError(
+                    "test suite did not test numpy, recompile while setting"
+                    " LAZYCSV_INCLUDE_NUMPY=1 as an env variable to compile"
+                    " extension with numpy support."
+                )
 
 
 class TestLazyCSVOptions:
@@ -215,8 +235,7 @@ class TestLazyCSVOptions:
         assert row_1 == [b"b1", b"a1", b"1"]
 
     def test_newlines_in_quote(self):
-        fpath = os.path.join(HERE, "fixtures/file_newline.csv")
-        lazy = lazycsv.LazyCSV(fpath, unquote=False)
+        lazy = lazycsv.LazyCSV("fixtures/file_newline.csv", unquote=False)
         assert lazy.headers == (b"", b'"This,that\n"', b'"Fizz,Buzz\r"')
         actual = [list(lazy.sequence(col=i)) for i in range(lazy.cols)]
         assert actual == [[b"0"], [b'"Goo,Bar\n"'], [b'"Bizz,Bazz"']]
@@ -239,8 +258,7 @@ class TestLazyCSVOptions:
 
 class TestCRLF:
     def test_crlf1(self):
-        fpath = os.path.join(HERE, "fixtures/file_crlf.csv")
-        lazy = lazycsv.LazyCSV(fpath)
+        lazy = lazycsv.LazyCSV("fixtures/file_crlf.csv")
 
         assert lazy.headers == (b"", b"A", b"B")
         actual = list(lazy.sequence(col=0))
@@ -251,8 +269,7 @@ class TestCRLF:
         assert actual == [b"b0"]
 
     def test_crlf2(self):
-        fpath = os.path.join(HERE, "fixtures/file_crlf2.csv")
-        lazy = lazycsv.LazyCSV(fpath, unquote=False)
+        lazy = lazycsv.LazyCSV("fixtures/file_crlf2.csv", unquote=False)
 
         assert lazy.headers == (b"", b'"This,that"', b'"Fizz,Buzz"')
         actual = list(lazy.sequence(col=0))
