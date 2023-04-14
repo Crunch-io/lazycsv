@@ -15,13 +15,23 @@
 #define LINE_FEED 10
 #define CARRIAGE_RETURN 13
 
+// users can set this macro in setup.py if you want to be more aggressive
+// with minimizing index disk usage (i.e. define INDEX_DTYPE as char)
+// but at a cost to performance.
+#ifndef INDEX_DTYPE
+#define INDEX_DTYPE short
+#endif
+
+static size_t INDEX_DTYPE_UMAX =
+    ((unsigned INDEX_DTYPE) ~(unsigned INDEX_DTYPE)0);
+
 void PyDebug() {return;}
 
 
 typedef struct {
     char* data;
-    Py_ssize_t size;
-    Py_ssize_t capacity;
+    size_t size;
+    size_t capacity;
 } WriteBuffer;
 
 
@@ -110,18 +120,18 @@ static inline void _Value_ToDisk(
     int afile, WriteBuffer *abuf
 ) {
 
-    Py_ssize_t target = value - apnt->value;
+    size_t target = value - apnt->value;
 
-    if (target > UCHAR_MAX) {
+    if (target > INDEX_DTYPE_UMAX) {
         *apnt = (LazyCSV_AnchorPoint){.value = value, .col = col_index+1};
         _BufferWrite(afile, abuf, apnt, sizeof(LazyCSV_AnchorPoint));
         ridx->count += 1;
         target = 0;
     }
 
-    unsigned char item = target;
+    unsigned INDEX_DTYPE item = target;
 
-    _BufferWrite(cfile, cbuf, &item, sizeof(char));
+    _BufferWrite(cfile, cbuf, &item, sizeof(INDEX_DTYPE));
 }
 
 
@@ -165,7 +175,7 @@ static inline size_t _AnchorValue_FromValue(size_t value, char *amap,
 static inline size_t _Value_FromIndex(size_t value, LazyCSV_RowIndex *ridx,
                                       char *cmap, char *amap) {
 
-    size_t cval = *(unsigned char*)(cmap+(value*sizeof(char)));
+    size_t cval = *(unsigned INDEX_DTYPE*)(cmap+(value*sizeof(INDEX_DTYPE)));
     size_t aval = _AnchorValue_FromValue(value, amap, ridx);
     return cval+aval;
 }
@@ -198,7 +208,7 @@ static inline PyObject* LazyCSV_IterCol(LazyCSV_Iter* iter) {
             (newlines + position*sizeof(LazyCSV_RowIndex));
 
         char* aidx = anchors+ridx->index;
-        char* cidx = commas+((lazy->cols+1)*position);
+        char* cidx = commas+((lazy->cols+1)*position*sizeof(INDEX_DTYPE));
 
         size_t cs = _Value_FromIndex(iter->col, ridx, cidx, aidx);
         size_t ce = _Value_FromIndex(iter->col + 1, ridx, cidx, aidx);
@@ -265,7 +275,7 @@ static inline PyObject* LazyCSV_IterRow(LazyCSV_Iter* iter) {
             (newlines + row*sizeof(LazyCSV_RowIndex));
 
         char* aidx = anchors+ridx->index;
-        char* cidx = commas+((lazy->cols+1)*row);
+        char* cidx = commas+((lazy->cols+1)*row*sizeof(INDEX_DTYPE));
 
         Py_ssize_t cs = _Value_FromIndex(position, ridx, cidx, aidx);
         Py_ssize_t ce = _Value_FromIndex(position + 1, ridx, cidx, aidx);
