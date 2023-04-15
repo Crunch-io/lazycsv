@@ -18,6 +18,7 @@
 // users can set this macro using the env variable LAZYCSV_INDEX_DTYPE if you
 // want to be more aggressive with minimizing index disk usage (i.e. define
 // INDEX_DTYPE as char) but at a cost to performance.
+
 #ifndef INDEX_DTYPE
 #define INDEX_DTYPE short
 #endif
@@ -121,9 +122,9 @@ typedef struct {
 } LazyCSV_Iter;
 
 
-static inline void _BufferWrite(
-    int fd, LazyCSV_Buffer* buffer, void* data, size_t size
-) {
+static inline void _BufferWrite(int fd, LazyCSV_Buffer *buffer, void *data,
+                                size_t size) {
+
     if (buffer->size + size >= buffer->capacity) {
         write(fd, buffer->data, buffer->size);
         buffer->size = 0;
@@ -654,7 +655,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             " check to be sure that the user has read permissions"
             " and/or ownership of the file, and that the file exists."
         );
-        return NULL;
+        goto return_err;
     }
 
     struct stat ust;
@@ -1121,7 +1122,7 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
 }
 
 
-static PyMemberDef LazyCSVMembers[] = {
+static PyMemberDef LazyCSV_Members[] = {
     {"headers", T_OBJECT, offsetof(LazyCSV, headers), READONLY, "header tuple"},
     {"rows", T_LONG, offsetof(LazyCSV, rows), READONLY, "row length"},
     {"cols", T_LONG, offsetof(LazyCSV, cols), READONLY, "col length"},
@@ -1130,7 +1131,7 @@ static PyMemberDef LazyCSVMembers[] = {
 };
 
 
-static PyMethodDef LazyCSVMethods[] = {
+static PyMethodDef LazyCSV_Methods[] = {
     {
         "sequence",
         (PyCFunction)LazyCSV_Seq,
@@ -1140,15 +1141,52 @@ static PyMethodDef LazyCSVMethods[] = {
     {NULL, }
 };
 
+PyDoc_STRVAR(
+    LazyCSV_Docstring,
+    "lazycsv.LazyCSV(\n"
+    "    filepath,\n"
+    "    /\n"
+    "    unquoted: bool=True,\n"
+    "    skip_headers: bool=False,\n"
+    "    buffer_size: int=2**21,\n"
+    "    index_dir: str=None,\n"
+    ")\n"
+    "\n"
+    "LazyCSV object constructor. Takes the filepath of a CSV\n"
+    "file as the first argument, and several keyword arguments\n"
+    "as optional values. Indexes the CSV, generates headers,\n"
+    "and returns `self` to the caller."
+    "\n\n"
+    "Options\n"
+    "-------\n"
+    "unquoted: bool=True -- if True, a quoted field will be\n"
+    "    stripped of quotes on parsing. i.e. `,\"goo\\nbar\",`\n"
+    "    will return 'goo\\nbar'.\n"
+    "skip_headers: bool=False -- skips parsing out header\n"
+    "    values to the .header attribute if True.\n"
+    "buffer_size: int=2**21 -- is the buffer size that LazyCSV\n"
+    "    uses when writing index data to disk during object\n"
+    "    construction, can be set to any value greater than 0\n"
+    "    (units of bytes).\n"
+    "index_dir: str=None -- Directory where index files\n"
+    "    are saved. By default uses Python's `TemporaryDirectory()`\n"
+    "    function in the `tempfile` module.\n"
+    "\n"
+    "Returns\n"
+    "-------\n"
+    "self\n"
+);
+
 
 static PyTypeObject LazyCSVType = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "lazycsv.LazyCSV",
+    .tp_doc = LazyCSV_Docstring,
     .tp_basicsize = sizeof(LazyCSV),
     .tp_dealloc = (destructor)LazyCSV_Destruct,
     .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
-    .tp_methods = LazyCSVMethods,
-    .tp_members = LazyCSVMembers,
+    .tp_methods = LazyCSV_Methods,
+    .tp_members = LazyCSV_Members,
     .tp_new = LazyCSV_New,
 };
 
