@@ -117,6 +117,7 @@ typedef struct {
     size_t row;
     size_t col;
     size_t position;
+    size_t _anchor;
     char reversed;
     char skip_header;
 } LazyCSV_Iter;
@@ -175,7 +176,7 @@ static inline void _Value_ToDisk(size_t value, LazyCSV_RowIndex *ridx,
 }
 
 
-static inline size_t _AnchorValue_FromValue(size_t value, char *amap,
+static inline size_t _AnchorValue_FromValue(size_t value, size_t* anchor, char *amap,
                                             LazyCSV_RowIndex *ridx) {
 
     LazyCSV_AnchorPoint apnt, apntp1;
@@ -186,37 +187,52 @@ static inline size_t _AnchorValue_FromValue(size_t value, char *amap,
         return apnt.value;
     }
 
-    size_t L = 0, R = ridx->count-1;
+    apnt = *(LazyCSV_AnchorPoint *)(amap + ((*anchor) *
+                                            sizeof(LazyCSV_AnchorPoint)));
 
-    size_t asize = sizeof(LazyCSV_AnchorPoint);
+    apntp1 = *(LazyCSV_AnchorPoint *)(amap + ((*anchor+1) *
+                                            sizeof(LazyCSV_AnchorPoint)));
 
-    while (L <= R) {
-        size_t M = (L + R) / 2;
-        apnt = *(LazyCSV_AnchorPoint *)(amap + (asize * M));
-        apntp1 = *(LazyCSV_AnchorPoint *)(amap + (asize * (M + 1)));
-        if (value > apntp1.col) {
-            L = M + 1;
-        }
-        else if (value < apnt.col) {
-            R = M - 1;
-        }
-        else if (value == apntp1.col) {
-            return apntp1.value;
-        }
-        else {
-            // apnt.col <= value && value < apntp1.col
-            return apnt.value;
-        }
-    }
-    return SIZE_MAX;
+    if (apnt.col <= value && value < apntp1.col)
+        return apnt.value;
+
+    *anchor += 1;
+
+    return _AnchorValue_FromValue(value, anchor, amap, ridx);
+
+    // PyDebug();
+    //
+    // size_t L = 0, R = ridx->count-1;
+    //
+    // size_t asize = sizeof(LazyCSV_AnchorPoint);
+    //
+    // while (L <= R) {
+    //     size_t M = (L + R) / 2;
+    //     apnt = *(LazyCSV_AnchorPoint *)(amap + (asize * M));
+    //     apntp1 = *(LazyCSV_AnchorPoint *)(amap + (asize * (M + 1)));
+    //     if (value > apntp1.col) {
+    //         L = M + 1;
+    //     }
+    //     else if (value < apnt.col) {
+    //         R = M - 1;
+    //     }
+    //     else if (value == apntp1.col) {
+    //         return apntp1.value;
+    //     }
+    //     else {
+    //         // apnt.col <= value && value < apntp1.col
+    //         return apnt.value;
+    //     }
+    // }
+    // return SIZE_MAX;
 }
 
 
-static inline size_t _Value_FromIndex(size_t value, LazyCSV_RowIndex *ridx,
+static inline size_t _Value_FromIndex(size_t value, size_t* anchor, LazyCSV_RowIndex *ridx,
                                       char *cmap, char *amap) {
 
     size_t cval = *(unsigned INDEX_DTYPE*)(cmap+(value*sizeof(INDEX_DTYPE)));
-    size_t aval = _AnchorValue_FromValue(value, amap, ridx);
+    size_t aval = _AnchorValue_FromValue(value, anchor, amap, ridx);
     return aval == SIZE_MAX ? aval : cval + aval;
 }
 
@@ -249,8 +265,8 @@ static inline void LazyCSV_IterCol(LazyCSV_Iter *iter, size_t *offset,
         char* aidx = anchors+ridx->index;
         char* cidx = commas+((lazy->cols+1)*position*sizeof(INDEX_DTYPE));
 
-        size_t cs = _Value_FromIndex(iter->col, ridx, cidx, aidx);
-        size_t ce = _Value_FromIndex(iter->col + 1, ridx, cidx, aidx);
+        size_t cs = _Value_FromIndex(iter->col, &iter->_anchor, ridx, cidx, aidx);
+        size_t ce = _Value_FromIndex(iter->col + 1, &iter->_anchor, ridx, cidx, aidx);
 
         *len = ce - cs - 1;
         *offset = cs;
@@ -281,8 +297,8 @@ static inline void LazyCSV_IterRow(LazyCSV_Iter *iter, size_t *offset,
         char* aidx = anchors+ridx->index;
         char* cidx = commas+((lazy->cols+1)*row*sizeof(INDEX_DTYPE));
 
-        size_t cs = _Value_FromIndex(position, ridx, cidx, aidx);
-        size_t ce = _Value_FromIndex(position + 1, ridx, cidx, aidx);
+        size_t cs = _Value_FromIndex(position, &iter->_anchor, ridx, cidx, aidx);
+        size_t ce = _Value_FromIndex(position + 1, &iter->_anchor, ridx, cidx, aidx);
 
         *len = ce - cs - 1;
         *offset = cs;
@@ -905,9 +921,10 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
         size_t cs, ce;
         size_t len;
         char* addr;
+        size_t anchor = 0;
         for (size_t i = 0; i < cols; i++) {
-            cs = _Value_FromIndex(i, ridx, comma_memmap, anchor_memmap);
-            ce = _Value_FromIndex(i+1, ridx, comma_memmap, anchor_memmap);
+            cs = _Value_FromIndex(i, &anchor, ridx, comma_memmap, anchor_memmap);
+            ce = _Value_FromIndex(i+1, &anchor, ridx, comma_memmap, anchor_memmap);
 
             if (ce - cs == 1) {
                 PyTuple_SET_ITEM(headers, i, PyBytes_FromString(""));
@@ -1114,6 +1131,7 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
     iter->col = col;
     iter->reversed = reversed;
     iter->position = 0;
+    iter->_anchor = 0;
     iter->lazy = self;
 
     Py_INCREF(self);
