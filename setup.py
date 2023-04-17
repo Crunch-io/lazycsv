@@ -47,14 +47,14 @@ setup(
         "benchmarks": ["datatable", "pandas", "pyarrow", "polars"],
     },
     classifiers=[
-        "Development Status :: 5 - Production",
+        "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Natural Language :: English",
         "Operating System :: POSIX",
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: Implementation :: CPython"
+        "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Utilities",
     ],
     package_dir={"": "src"},

@@ -1,6 +1,6 @@
 # lazycsv - an OOM csv parser
 
-##### Developers: Michael Green, Chris Perkins
+###### Developers: Michael Green, Chris Perkins
 
 lazycsv is a C implementation of a csv parser for python. The aim of this
 parser is to provide for fast extraction of sequences of data from a CSV file
