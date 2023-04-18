@@ -1,4 +1,4 @@
-# lazycsv - an OOM csv parser
+# lazycsv - a memory-efficient csv parser
 
 ###### Developers: Michael Green, Chris Perkins
 
