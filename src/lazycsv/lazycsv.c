@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -17,10 +18,10 @@
 
 // users can set this macro using the env variable LAZYCSV_INDEX_DTYPE if you
 // want to be more aggressive with minimizing index disk usage (i.e. define
-// INDEX_DTYPE as char) but at a cost to performance.
+// INDEX_DTYPE as uint8_t) but at a cost to performance.
 
 #ifndef INDEX_DTYPE
-#define INDEX_DTYPE short
+#define INDEX_DTYPE uint16_t
 #endif
 
 #ifdef DEBUG
@@ -51,8 +52,7 @@ void PyDebug() {return;}
 #endif
 
 
-static size_t INDEX_DTYPE_UMAX =
-    ((unsigned INDEX_DTYPE) ~(unsigned INDEX_DTYPE)0);
+static size_t INDEX_DTYPE_MAX = ((INDEX_DTYPE) ~(INDEX_DTYPE)0);
 
 
 typedef struct {
@@ -162,14 +162,14 @@ static inline void _Value_ToDisk(size_t value, LazyCSV_RowIndex *ridx,
 
     size_t target = value - apnt->value;
 
-    if (target > INDEX_DTYPE_UMAX) {
+    if (target > INDEX_DTYPE_MAX) {
         *apnt = (LazyCSV_AnchorPoint){.value = value, .col = col_index+1};
         _BufferWrite(afile, abuf, apnt, sizeof(LazyCSV_AnchorPoint));
         ridx->count += 1;
         target = 0;
     }
 
-    unsigned INDEX_DTYPE item = target;
+    INDEX_DTYPE item = target;
 
     _BufferWrite(cfile, cbuf, &item, sizeof(INDEX_DTYPE));
 }
@@ -215,7 +215,7 @@ static inline size_t _AnchorValue_FromValue(size_t value, char *amap,
 static inline size_t _Value_FromIndex(size_t value, LazyCSV_RowIndex *ridx,
                                       char *cmap, char *amap) {
 
-    size_t cval = *(unsigned INDEX_DTYPE*)(cmap+(value*sizeof(INDEX_DTYPE)));
+    size_t cval = *(INDEX_DTYPE*)(cmap+(value*sizeof(INDEX_DTYPE)));
     size_t aval = _AnchorValue_FromValue(value, amap, ridx);
     return aval == SIZE_MAX ? aval : cval + aval;
 }

@@ -15,15 +15,16 @@ The parser works as follows:
 First, The user file is memory-mapped internally to the LazyCSV object. That
 file is used to generate three indexes. The first is an index of values which
 correspond to the position in the user file where a given CSV field starts.
-This value is always an `unsigned short`, which we found to be the optimal bit
-size for disk usage and execution performance (this can be adjusted in the
-setup.py file). For index values outside the range of an unsigned short, An
-"anchor point" is created, which is a pair of `size_t` values that mark both
-the value which is subtracted from the index value such that the index value
-fits within 16 bits, and the first column of the CSV where the anchor value
-applies. This anchor point is periodically written to the second index file
-when required for a given comma index. Finally, the third index writes the
-index of the first anchor point for each row of the file.
+This value is always a `uint16_t` which we found to be the optimal bit size for
+disk usage and execution performance (This type can however be changed by
+setting the `LAZYCSV_INDEX_DTYPE` environment variable to any unsigned integer
+type). For index values outside the range of an unsigned short, An "anchor
+point" is created, which is a pair of `size_t` values that mark both the value
+which is subtracted from the index value such that the index value fits within
+16 bits, and the first column of the CSV where the anchor value applies. This
+anchor point is periodically written to the second index file when required for
+a given comma index. Finally, the third index writes the index of the first
+anchor point for each row of the file.
 
 When a user requests a sequence of data (i.e. a row or a column), an iterator
 is created and returned. This iterator uses the value of the requested sequence
@@ -136,7 +137,7 @@ Access to this feature requires numpy to be preinstalled as this feature makes
 numpy a compilation dependency.
 
 ```bash
-$ LAZYCSV_INCLUDE_NUMPY=1 python setup.py build_ext --inplace --force
+$ LAZYCSV_INCLUDE_NUMPY=1 python -m pip install lazycsv
 ```
 ```python
 >>> import numpy as np

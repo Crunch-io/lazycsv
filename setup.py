@@ -3,7 +3,7 @@ import os
 from setuptools import Extension, find_packages, setup
 
 LAZYCSV_DEBUG = int(os.environ.get("LAZYCSV_DEBUG", 0))
-LAZYCSV_INDEX_DTYPE = os.environ.get("LAZYCSV_INDEX_DTYPE", "short")
+LAZYCSV_INDEX_DTYPE = os.environ.get("LAZYCSV_INDEX_DTYPE", "uint16_t")
 
 LAZYCSV_INCLUDE_NUMPY = int(os.environ.get("LAZYCSV_INCLUDE_NUMPY", 0))
 LAZYCSV_INCLUDE_NUMPY_LEGACY = int(
@@ -15,6 +15,11 @@ include_dirs = (
     if (LAZYCSV_INCLUDE_NUMPY|LAZYCSV_INCLUDE_NUMPY_LEGACY)
     else []
 )
+
+if not LAZYCSV_INDEX_DTYPE.startswith(("unsigned", "uint")):
+    raise ValueError(
+        "specified LAZYCSV_INDEX_DTYPE must be an unsigned integer type"
+    )
 
 extensions = [
     Extension(
@@ -35,7 +40,7 @@ with open("README.md", "r") as f:
 
 setup(
     name="lazycsv",
-    version="1.0.0",
+    version="1.0.2",
     author="Michael Green, Chris Perkins",
     author_email="dev@crunch.io",
     description="an OOM csv parser",
