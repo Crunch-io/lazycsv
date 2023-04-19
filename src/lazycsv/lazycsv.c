@@ -535,28 +535,14 @@ static inline void _TempDir_AsString(PyObject** tempdir, char** dirname) {
 
 static inline void _FullName_FromName(PyObject *name, PyObject **fullname_obj,
                                       char **fullname) {
-
+    
+    PyObject *os = PyImport_ImportModule("os");
     PyObject *os_path = PyImport_ImportModule("os.path");
     PyObject *builtins = PyImport_ImportModule("builtins");
 
-    PyObject* global_vars = PyObject_CallMethod(builtins, "globals", NULL);
-
     PyObject* _dirname;
-
-    // borrowed ref
-    PyObject* __file__ = PyDict_GetItemString(global_vars, "__file__");
-
-    if (!__file__) {
-        // if run in say, the python shell, there is no __file__, so use cwd
-        // of the interpreter
-        PyObject *os = PyImport_ImportModule("os");
-        _dirname = PyObject_CallMethod(os, "getcwd", NULL);
-        Py_DECREF(os);
-    }
-
-    else {
-        _dirname = PyObject_CallMethod(os_path, "dirname", "O", __file__);
-    }
+    _dirname = PyObject_CallMethod(os, "getcwd", NULL);
+    
 
     PyObject *dirname = PyUnicode_AsUTF8String(_dirname);
     Py_DECREF(_dirname);
@@ -580,10 +566,10 @@ static inline void _FullName_FromName(PyObject *name, PyObject **fullname_obj,
         *fullname = PyBytes_AsString(*fullname_obj);
         Py_DECREF(joined);
     }
-
+    
+    Py_DECREF(os);
     Py_DECREF(os_path);
     Py_DECREF(builtins);
-    Py_DECREF(global_vars);
     Py_DECREF(dirname);
     Py_DECREF(abspath);
     Py_DECREF(bytes);
