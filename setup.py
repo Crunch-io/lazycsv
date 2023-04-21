@@ -40,7 +40,7 @@ with open("README.md", "r") as f:
 
 setup(
     name="lazycsv",
-    version="1.0.2",
+    version="1.0.3",
     author="Michael Green, Chris Perkins",
     author_email="dev@crunch.io",
     description="an OOM csv parser",

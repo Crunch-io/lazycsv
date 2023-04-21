@@ -117,6 +117,8 @@ typedef struct {
     size_t row;
     size_t col;
     size_t position;
+    size_t stop;
+    size_t step;
     char reversed;
     char skip_header;
 } LazyCSV_Iter;
@@ -225,7 +227,7 @@ static inline void LazyCSV_IterCol(LazyCSV_Iter *iter, size_t *offset,
                                    size_t *len) {
     LazyCSV *lazy = (LazyCSV *)iter->lazy;
 
-    if (iter->position < lazy->rows) {
+    if (iter->position < iter->stop) {
 
         size_t position;
 
@@ -236,7 +238,7 @@ static inline void LazyCSV_IterCol(LazyCSV_Iter *iter, size_t *offset,
             position = iter->position + !lazy->_skip_headers;
         }
 
-        iter->position += 1;
+        iter->position += iter->step;
 
         char* newlines = lazy->_index->newlines->data;
         char* anchors = lazy->_index->anchors->data;
@@ -262,11 +264,11 @@ static inline void LazyCSV_IterRow(LazyCSV_Iter *iter, size_t *offset,
                                    size_t *len) {
     LazyCSV *lazy = (LazyCSV *)iter->lazy;
 
-    if (iter->position < lazy->cols) {
+    if (iter->position < iter->stop) {
         size_t position = iter->reversed ?
             lazy->cols - iter->position - 1 : iter->position;
 
-        iter->position += 1;
+        iter->position += iter->step;
 
         char* newlines = lazy->_index->newlines->data;
         char* anchors = lazy->_index->anchors->data;
@@ -1110,15 +1112,102 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
         return NULL;
     }
 
+    LazyCSV* lazy = (LazyCSV*)self;
+
     iter->row = row;
     iter->col = col;
     iter->reversed = reversed;
     iter->position = 0;
+    iter->step = 1;
+    iter->stop = col == SIZE_MAX ? lazy->cols : lazy->rows;
     iter->lazy = self;
 
     Py_INCREF(self);
 
     return (PyObject*)iter;
+}
+
+
+static PyObject* LazyCSV_GetValue(PyObject* self, PyObject* r, PyObject* c) {
+
+    Py_ssize_t row = PyLong_AsSsize_t(r);
+    Py_ssize_t col = PyLong_AsSsize_t(c);
+
+    LazyCSV* lazy = (LazyCSV*)self;
+
+    if (row < 0) {
+        row = lazy->rows + row;
+    }
+
+    if (col < 0) {
+        col = lazy->cols + col;
+    }
+
+    int row_in_bounds = (
+        0 <= row && row < lazy->rows
+    );
+
+    int col_in_bounds = (
+        0 <= col && col < lazy->cols
+    );
+
+    if (!row_in_bounds || !col_in_bounds) {
+        PyErr_SetString(
+            PyExc_ValueError,
+            "provided value not in bounds of index"
+        );
+        return NULL;
+    }
+
+    row += !lazy->_skip_headers;
+
+    char* newlines = lazy->_index->newlines->data;
+    char* anchors = lazy->_index->anchors->data;
+    char* commas = lazy->_index->commas->data;
+
+    LazyCSV_RowIndex* ridx =
+        (LazyCSV_RowIndex*)
+        (newlines + row*sizeof(LazyCSV_RowIndex));
+
+    char* aidx = anchors+ridx->index;
+    char* cidx = commas+((lazy->cols+1)*row*sizeof(INDEX_DTYPE));
+
+    size_t cs = _Value_FromIndex((size_t)col, ridx, cidx, aidx);
+    size_t ce = _Value_FromIndex((size_t)col + 1, ridx, cidx, aidx);
+
+    size_t len = ce - cs - 1;
+
+    return PyBytes_FromOffsetAndLen(lazy, cs, len);
+}
+
+
+static PyObject* LazyCSV_GetItem(PyObject* self, PyObject* key) {
+    if (!PyTuple_Check(key)) {
+        PyErr_SetString(
+            PyExc_ValueError,
+            "index must contain both a row and column value"
+        );
+        return NULL;
+    }
+
+    PyObject *row, *col;
+
+    if (!PyArg_ParseTuple(key, "OO", &row, &col)) {
+        PyErr_SetString(
+            PyExc_RuntimeError,
+            "unable to parse index key"
+        );
+        return NULL;
+    }
+
+    if (PyLong_Check(row) && PyLong_Check(col))
+        return LazyCSV_GetValue(self, row, col);
+
+    PyErr_SetString(
+        PyExc_ValueError,
+        "given indexing schema is not supported"
+    );
+    return NULL;
 }
 
 
@@ -1139,6 +1228,12 @@ static PyMethodDef LazyCSV_Methods[] = {
         "get column iterator"
     },
     {NULL, }
+};
+
+static PyMappingMethods LazyCSV_MappingMembers[] = {
+    (lenfunc)NULL,
+    (binaryfunc)LazyCSV_GetItem,
+    (objobjargproc)NULL,
 };
 
 PyDoc_STRVAR(
@@ -1187,6 +1282,7 @@ static PyTypeObject LazyCSVType = {
     .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
     .tp_methods = LazyCSV_Methods,
     .tp_members = LazyCSV_Members,
+    .tp_as_mapping = LazyCSV_MappingMembers,
     .tp_new = LazyCSV_New,
 };
 

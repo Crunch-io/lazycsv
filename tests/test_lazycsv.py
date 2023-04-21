@@ -150,6 +150,34 @@ class TestLazyCSV:
         assert actual == [[b"", b"", b""], [b"", b"", b""]]
         assert lazy.headers == ()
 
+    def test_getitem(self, lazy):
+        data = b",,\n0x0,0x1,0x2\n1x0,1x1,1x2\n2x0,2x1,2x2\n"
+        with prepped_file(data) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name)
+            assert lazy[0, 0] == lazy[-3, -3] == b"0x0"
+            assert lazy[1, 1] == lazy[-2, -2] == b"1x1"
+            assert lazy[2, 2] == lazy[-1, -1] == b"2x2"
+            with pytest.raises(ValueError) as err:
+                lazy[3, 3]
+            assert ('provided value not in bounds of index',) == err.value.args
+
+    def test_getitem_empty(self, lazy):
+        data = b",,\n0x0,0x1,0x2\n1x0,,1x2\n2x0,2x1,2x2\n"
+        with prepped_file(data) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name)
+            assert lazy[1, 1] == b""
+
+    def test_getitem_skipped_headers(self):
+        data = b"0x0,0x1,0x2\n1x0,1x1,1x2\n2x0,2x1,2x2\n"
+        with prepped_file(data) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name, skip_headers=True)
+            assert lazy[0, 0] == lazy[-3, -3] == b"0x0"
+            assert lazy[1, 1] == lazy[-2, -2] == b"1x1"
+            assert lazy[2, 2] == lazy[-1, -1] == b"2x2"
+            with pytest.raises(ValueError) as err:
+                lazy[3, 3]
+            assert ('provided value not in bounds of index',) == err.value.args
+
 
 class TestLazyCSVIter:
     def test_to_list(self, lazy):
