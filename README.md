@@ -72,6 +72,19 @@ the C level, maximizing performance.
 array([0, 1])
 ```
 
+The `lazy` object also supports indexing operations for expressive iterables.
+The axis for iteration can be passed as a slice object, and the index of the
+terable can be passed as a integer. Individual coordinate values can also be
+passed as a pair of integers, this call will eagerly return the value at that
+index.
+
+```python
+>>> list(lazy[::-1, 1])
+[b'a1', b'a0']
+>>> lazy[-1, -1]
+b"b1"
+```
+
 Iterators can be materialized at any point by calling the `to_list()` or
 `to_numpy()` methods on the iterator object (to enable optional numpy support,
 see the Numpy section of this document). These methods exhaust the iterator,

@@ -111,7 +111,7 @@ typedef struct {
 } LazyCSV;
 
 
-typedef struct {
+typedef struct lazycsv_iter {
     PyObject_HEAD
     PyObject* lazy;
     size_t row;
@@ -119,8 +119,8 @@ typedef struct {
     size_t position;
     size_t stop;
     size_t step;
+    void (*fn)(struct lazycsv_iter*, size_t*, size_t*);
     char reversed;
-    char skip_header;
 } LazyCSV_Iter;
 
 
@@ -337,19 +337,7 @@ static PyObject* LazyCSV_IterNext(PyObject* self) {
 
     size_t offset = SIZE_MAX, len;
 
-    if (iter->col != SIZE_MAX) {
-        LazyCSV_IterCol(iter, &offset, &len);
-    }
-    else if (iter->row != SIZE_MAX) {
-        LazyCSV_IterRow(iter, &offset, &len);
-    }
-    else {
-        PyErr_SetString(
-            PyExc_RuntimeError,
-            "could not determine axis for materialization"
-        );
-        return NULL;
-    }
+    iter->fn(iter, &offset, &len);
 
     if (offset==SIZE_MAX) {
         PyErr_SetNone(PyExc_StopIteration);
@@ -365,15 +353,12 @@ static PyObject* LazyCSV_IterAsList(PyObject* self) {
     LazyCSV* lazy = (LazyCSV*)iter->lazy;
 
     size_t size;
-    void (*IterFn)(LazyCSV_Iter*, size_t*, size_t*);
 
     if (iter->col != SIZE_MAX) {
         size = lazy->rows - iter->position;
-        IterFn = LazyCSV_IterCol;
     }
     else if (iter->row != SIZE_MAX) {
         size = lazy->cols - iter->position;
-        IterFn = LazyCSV_IterRow;
     }
     else {
         PyErr_SetString(
@@ -388,7 +373,7 @@ static PyObject* LazyCSV_IterAsList(PyObject* self) {
 
     PyObject* item;
     for (size_t i = 0; i < size; i++) {
-        IterFn(iter, &offset, &len);
+        iter->fn(iter, &offset, &len);
         item = PyBytes_FromOffsetAndLen(lazy, offset, len);
         PyList_SET_ITEM(result, i, item);
     }
@@ -1069,6 +1054,8 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
 
     size_t row = SIZE_MAX;
     size_t col = SIZE_MAX;
+    size_t stop;
+    void (*fn)(LazyCSV_Iter*, size_t*, size_t*);
     char reversed;
 
     static char *kwlist[] = {"row", "col", "reversed", NULL};
@@ -1101,6 +1088,22 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
         return NULL;
     }
 
+    if (col != SIZE_MAX) {
+        fn = LazyCSV_IterCol;
+        stop = ((LazyCSV*)self)->rows;
+    }
+    else if (row != SIZE_MAX) {
+        fn = LazyCSV_IterRow;
+        stop = ((LazyCSV*)self)->cols;
+    }
+    else {
+        PyErr_SetString(
+            PyExc_RuntimeError,
+            "could not determine axis for materialization"
+        );
+        return NULL;
+    }
+
     PyTypeObject* type = &LazyCSV_IterType;
     LazyCSV_Iter* iter = (LazyCSV_Iter*)type->tp_alloc(type, 0);
 
@@ -1112,15 +1115,14 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
         return NULL;
     }
 
-    LazyCSV* lazy = (LazyCSV*)self;
-
     iter->row = row;
     iter->col = col;
     iter->reversed = reversed;
     iter->position = 0;
     iter->step = 1;
-    iter->stop = col == SIZE_MAX ? lazy->cols : lazy->rows;
+    iter->stop = stop;
     iter->lazy = self;
+    iter->fn = fn;
 
     Py_INCREF(self);
 
@@ -1130,18 +1132,13 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
 
 static PyObject* LazyCSV_GetValue(PyObject* self, PyObject* r, PyObject* c) {
 
-    Py_ssize_t row = PyLong_AsSsize_t(r);
-    Py_ssize_t col = PyLong_AsSsize_t(c);
+    Py_ssize_t _row = PyLong_AsSsize_t(r);
+    Py_ssize_t _col = PyLong_AsSsize_t(c);
 
     LazyCSV* lazy = (LazyCSV*)self;
 
-    if (row < 0) {
-        row = lazy->rows + row;
-    }
-
-    if (col < 0) {
-        col = lazy->cols + col;
-    }
+    size_t row = _row < 0 ? lazy->rows + _row : (size_t)_row;
+    size_t col = _col < 0 ? lazy->cols + _col : (size_t)_col;
 
     int row_in_bounds = (
         0 <= row && row < lazy->rows
@@ -1190,9 +1187,9 @@ static PyObject* LazyCSV_GetItem(PyObject* self, PyObject* key) {
         return NULL;
     }
 
-    PyObject *row, *col;
+    PyObject *row_obj, *col_obj;
 
-    if (!PyArg_ParseTuple(key, "OO", &row, &col)) {
+    if (!PyArg_ParseTuple(key, "OO", &row_obj, &col_obj)) {
         PyErr_SetString(
             PyExc_RuntimeError,
             "unable to parse index key"
@@ -1200,12 +1197,153 @@ static PyObject* LazyCSV_GetItem(PyObject* self, PyObject* key) {
         return NULL;
     }
 
-    if (PyLong_Check(row) && PyLong_Check(col))
-        return LazyCSV_GetValue(self, row, col);
+    if (PyLong_Check(row_obj) && PyLong_Check(col_obj))
+        return LazyCSV_GetValue(self, row_obj, col_obj);
 
+    int row_is_slice = PySlice_Check(row_obj);
+    int col_is_slice = PySlice_Check(col_obj);
+
+    LazyCSV* lazy = (LazyCSV*)self;
+
+    void (*fn)(LazyCSV_Iter*, size_t*, size_t*);
+    char reversed;
+
+    if (row_is_slice && !col_is_slice) {
+        PySliceObject* row_slice = (PySliceObject*)row_obj;
+
+        Py_ssize_t _col = PyLong_AsSsize_t(col_obj);
+        size_t col = _col < 0 ? lazy->cols + _col : (size_t)_col;
+
+        int col_in_bounds = (
+            0 <= col && col < lazy->cols
+        );
+
+        if (!col_in_bounds) goto boundary_err;
+
+        Py_ssize_t _start = row_slice->start == Py_None
+                                ? (Py_ssize_t)0
+                                : PyLong_AsSsize_t(row_slice->start);
+        Py_ssize_t _stop = row_slice->stop == Py_None
+                               ? (Py_ssize_t)lazy->rows
+                               : PyLong_AsSsize_t(row_slice->stop);
+        Py_ssize_t _step =
+            row_slice->step == Py_None ? 1 : PyLong_AsSsize_t(row_slice->step);
+
+        size_t start = _start < 0 ? lazy->rows + _start : (size_t)_start;
+        size_t stop = _stop < 0 ? lazy->rows + _stop : (size_t)_stop;
+
+        char reversed;
+        size_t step;
+
+        if (_step < 0) {
+            step = (size_t)(-1 * _step);
+            reversed = 1;
+            if (row_slice->start != Py_None || row_slice->stop != Py_None) {
+                size_t tmp = start;
+                start = stop;
+                stop = tmp;
+            }
+        }
+        else {
+            step = (size_t)_step;
+            reversed = 0;
+        }
+
+        PyTypeObject* type = &LazyCSV_IterType;
+        LazyCSV_Iter* iter = (LazyCSV_Iter*)type->tp_alloc(type, 0);
+        if (!iter) goto memory_err;
+
+        iter->row = SIZE_MAX;
+        iter->col = col;
+        iter->reversed = reversed;
+        iter->position = start;
+        iter->step = step;
+        iter->stop = stop;
+        iter->lazy = self;
+        iter->fn = LazyCSV_IterCol;
+        Py_INCREF(self);
+
+        return (PyObject*)iter;
+    }
+
+    if (col_is_slice && !row_is_slice) {
+        PySliceObject* col_slice = (PySliceObject*)col_obj;
+
+        Py_ssize_t _row = PyLong_AsSsize_t(row_obj);
+        size_t row = _row < 0 ? lazy->rows + _row : (size_t)_row;
+
+        int row_in_bounds = (
+            0 <= row && row < lazy->rows
+        );
+
+        if (!row_in_bounds) goto boundary_err;
+
+        Py_ssize_t _start = col_slice->start == Py_None
+                                ? (Py_ssize_t)0
+                                : PyLong_AsSsize_t(col_slice->start);
+        Py_ssize_t _stop = col_slice->stop == Py_None
+                               ? (Py_ssize_t)lazy->cols
+                               : PyLong_AsSsize_t(col_slice->stop);
+        Py_ssize_t _step =
+            col_slice->step == Py_None ? 1 : PyLong_AsSsize_t(col_slice->step);
+
+        size_t start = _start < 0 ? lazy->cols + _start : (size_t)_start;
+        size_t stop = _stop < 0 ? lazy->cols + _stop : (size_t)_stop;
+
+        size_t step;
+        char reversed;
+
+        if (_step < 0) {
+            step = (size_t)(-1 * _step);
+            reversed = 1;
+            if (col_slice->start != Py_None || col_slice->stop != Py_None) {
+                size_t tmp = start;
+                start = stop;
+                stop = tmp;
+            }
+        }
+        else {
+            step = (size_t)_step;
+            reversed = 0;
+        }
+
+        PyTypeObject* type = &LazyCSV_IterType;
+        LazyCSV_Iter* iter = (LazyCSV_Iter*)type->tp_alloc(type, 0);
+        if (!iter) goto memory_err;
+
+        iter->row = row;
+        iter->col = SIZE_MAX;
+        iter->reversed = reversed;
+        iter->position = start;
+        iter->step = step;
+        iter->stop = stop;
+        iter->fn = LazyCSV_IterRow;
+        iter->lazy = self;
+        Py_INCREF(self);
+
+        return (PyObject*)iter;
+    }
+
+    goto schema_err;
+
+schema_err:
     PyErr_SetString(
         PyExc_ValueError,
         "given indexing schema is not supported"
+    );
+    return NULL;
+
+memory_err:
+    PyErr_SetString(
+        PyExc_MemoryError,
+        "unable to allocate memory for iterable"
+    );
+    return NULL;
+
+boundary_err:
+    PyErr_SetString(
+        PyExc_ValueError,
+        "provided value not in bounds of index"
     );
     return NULL;
 }
