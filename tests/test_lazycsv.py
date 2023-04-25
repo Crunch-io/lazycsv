@@ -13,6 +13,15 @@ import pytest
 HERE = os.path.abspath(os.path.dirname(__file__))
 FPATH = os.path.join(HERE, "fixtures/file.csv")
 
+INDEX_COLLECTION = [None, *range(-9, 0), *range(1, 10)]
+
+SLICE_INDEXES = [
+    (a, b, c)
+    for a in INDEX_COLLECTION
+    for b in INDEX_COLLECTION
+    for c in INDEX_COLLECTION
+]
+
 
 @pytest.fixture
 def lazy():
@@ -91,6 +100,23 @@ class TestLazyCSV:
         actual = list(lazy.sequence(col=2))
         assert actual == [b"b0", b"b1"]
 
+    def test_get_column_slice(self, lazy):
+        actual = list(lazy[:, 1])
+        assert actual == [b"a0", b"a1"]
+        with pytest.raises(ValueError) as err:
+            _ = list(lazy[:, -5])
+        assert err.value.args == ("provided value not in bounds of index",)
+
+    def test_get_col_slice_variety(self, lazy):
+        actual = b"INDEX\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n"
+        with prepped_file(actual) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name)
+            for indexes in SLICE_INDEXES:
+                _slice = slice(*indexes)
+                expected = list(range(10))[_slice]
+                actual = list(map(int, lazy[_slice, 0]))
+                assert actual == expected
+
     def test_get_actual_col(self):
         actual = b"INDEX,ATTR\n0,a\n1,b\n2,c\n3,d\n"
         with prepped_file(actual) as tempf:
@@ -124,6 +150,33 @@ class TestLazyCSV:
         assert row_0 == [b"0", b"a0", b"b0"]
         row_1 = list(lazy.sequence(row=1))
         assert row_1 == [b"1", b"a1", b"b1"]
+
+    def test_get_row_getitem(self, lazy):
+        row_0 = list(lazy[0, :])
+        assert row_0 == [b"0", b"a0", b"b0"]
+        with pytest.raises(ValueError) as err:
+            _ = list(lazy[-5, :])
+        assert err.value.args == ("provided value not in bounds of index",)
+
+    def test_get_row_slice_variety(self):
+        actual = b"A,B,C,D,E,F,G,H,I,J\n0,1,2,3,4,5,6,7,8,9\n"
+        with prepped_file(actual) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name)
+            for indexes in SLICE_INDEXES:
+                _slice = slice(*indexes)
+                expected = list(range(10))[_slice]
+                actual = list(map(int, lazy[0, _slice]))
+                assert actual == expected
+
+    def test_get_row_slice_skipped_headers(self):
+        actual = b"A,B,C,D,E,F,G,H,I,J\n0,1,2,3,4,5,6,7,8,9\n"
+        with prepped_file(actual) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name, skip_headers=True)
+            for indexes in SLICE_INDEXES:
+                _slice = slice(*indexes)
+                expected = list(range(10))[_slice]
+                actual = list(map(int, lazy[1, _slice]))
+                assert actual == expected
 
     def test_empty_csv(self):
         lazy = lazycsv.LazyCSV("fixtures/file_empty.csv")
@@ -159,7 +212,7 @@ class TestLazyCSV:
             assert lazy[2, 2] == lazy[-1, -1] == b"2x2"
             with pytest.raises(ValueError) as err:
                 lazy[3, 3]
-            assert ('provided value not in bounds of index',) == err.value.args
+            assert ("provided value not in bounds of index",) == err.value.args
 
     def test_getitem_empty(self, lazy):
         data = b",,\n0x0,0x1,0x2\n1x0,,1x2\n2x0,2x1,2x2\n"
@@ -176,7 +229,7 @@ class TestLazyCSV:
             assert lazy[2, 2] == lazy[-1, -1] == b"2x2"
             with pytest.raises(ValueError) as err:
                 lazy[3, 3]
-            assert ('provided value not in bounds of index',) == err.value.args
+            assert ("provided value not in bounds of index",) == err.value.args
 
 
 class TestLazyCSVIter:
@@ -315,7 +368,7 @@ class TestBigFiles:
         assert len(actual) == 1000
 
     def test_variable_buffer_size(self, file_1000r_1000c):
-        lazy = lazycsv.LazyCSV(file_1000r_1000c.name, buffer_size=10 ** 7)
+        lazy = lazycsv.LazyCSV(file_1000r_1000c.name, buffer_size=10**7)
         actual = list(lazy.sequence(col=0))
         assert len(actual) == 1000
 

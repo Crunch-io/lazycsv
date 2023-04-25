@@ -72,13 +72,26 @@ the C level, maximizing performance.
 array([0, 1])
 ```
 
+The `lazy` object also supports indexing operations for expressive iterables.
+The axis for iteration can be passed as a slice object, and the index of the
+iterable can be passed as a integer. Individual coordinate values can also be
+passed as a pair of integers, this call will eagerly return the value at that
+index.
+
+```python
+>>> list(lazy[::-1, 1])
+[b'a1', b'a0']
+>>> lazy[-1, -1]
+b"b1"
+```
+
 Iterators can be materialized at any point by calling the `to_list()` or
 `to_numpy()` methods on the iterator object (to enable optional numpy support,
 see the Numpy section of this document). These methods exhaust the iterator,
 placing the remaining PyBytes values into a PyObject.
 
 ```python
->>> col = lazy.sequence(col=0)
+>>> col = lazy[:, 0]
 >>> next(col)
 b'0'
 >>> col.to_list()
@@ -102,7 +115,7 @@ responsibility of the user to make sure that columns are properly named.*
 >>> list(col)
 [b'a0', b'a1']
 >>> lazy = lazycsv.LazyCSV(FPATH, skip_headers=True)
->>> (col := lazy.sequence(col=1))
+>>> (col := lazy[:, 1])
 <lazycsv_iterator object at 0x7f59d1b21890>
 >>> list(col)
 [b'ALPHA', b'a0', b'a1']
@@ -162,9 +175,9 @@ rows=10000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 0.5116381410043687
-parsing cols... time to parse: 1.5931394950021058
-total time: 2.1047776360064745
+indexing lazy... time to index: 0.4978358040098101
+parsing cols... time to parse: 1.8409163669857662
+total time: 2.3387521709955763
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
@@ -186,9 +199,9 @@ rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 4.990824360997067
-parsing cols... time to parse: 19.573407171003055
-total time: 24.56423153200012
+indexing lazy... time to index: 4.978727137990063
+parsing cols... time to parse: 23.64216143201338
+total time: 28.620888570003444
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]

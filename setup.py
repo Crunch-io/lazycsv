@@ -6,20 +6,16 @@ LAZYCSV_DEBUG = int(os.environ.get("LAZYCSV_DEBUG", 0))
 LAZYCSV_INDEX_DTYPE = os.environ.get("LAZYCSV_INDEX_DTYPE", "uint16_t")
 
 LAZYCSV_INCLUDE_NUMPY = int(os.environ.get("LAZYCSV_INCLUDE_NUMPY", 0))
-LAZYCSV_INCLUDE_NUMPY_LEGACY = int(
-    os.environ.get("LAZYCSV_INCLUDE_NUMPY_LEGACY", 0)
-)
+LAZYCSV_INCLUDE_NUMPY_LEGACY = int(os.environ.get("LAZYCSV_INCLUDE_NUMPY_LEGACY", 0))
 
 include_dirs = (
     [__import__("numpy").get_include()]
-    if (LAZYCSV_INCLUDE_NUMPY|LAZYCSV_INCLUDE_NUMPY_LEGACY)
+    if (LAZYCSV_INCLUDE_NUMPY | LAZYCSV_INCLUDE_NUMPY_LEGACY)
     else []
 )
 
 if not LAZYCSV_INDEX_DTYPE.startswith(("unsigned", "uint")):
-    raise ValueError(
-        "specified LAZYCSV_INDEX_DTYPE must be an unsigned integer type"
-    )
+    raise ValueError("specified LAZYCSV_INDEX_DTYPE must be an unsigned integer type")
 
 extensions = [
     Extension(
@@ -30,7 +26,7 @@ extensions = [
             ("INDEX_DTYPE", LAZYCSV_INDEX_DTYPE),
             ("INCLUDE_NUMPY", LAZYCSV_INCLUDE_NUMPY),
             ("INCLUDE_NUMPY_LEGACY", LAZYCSV_INCLUDE_NUMPY_LEGACY),
-            ("DEBUG", LAZYCSV_DEBUG)
+            ("DEBUG", LAZYCSV_DEBUG),
         ],
     )
 ]
@@ -48,7 +44,7 @@ setup(
     long_description_content_type="text/markdown",
     packages=find_packages(where="src"),
     extras_require={
-        "test": ["pytest"],
+        "test": ["pytest", "numpy"],
         "benchmarks": ["datatable", "pandas", "pyarrow", "polars"],
     },
     classifiers=[

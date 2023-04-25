@@ -172,8 +172,8 @@ def run_polars_scan(fpath):
 
 
 def main():
-    cols = 1000
-    rows = 10000
+    cols = 100000
+    rows = 100000
     sparsity = 0.95
     benchmarks = {
         "lazycsv": run_lazy,
