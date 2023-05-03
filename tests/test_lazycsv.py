@@ -528,7 +528,8 @@ class TestEdgecases:
         with prepped_file(data) as tempf:
             lazy = lazycsv.LazyCSV(tempf.name, skip_headers=True)
             actual = list(list(lazy.sequence(col=i)) for i in range(lazy.cols))
-        assert actual == [data.split()]
+        expected = [data.split()]
+        assert actual == expected
 
     def test_encoded_headers(self):
         data = '"Göteborg","Sverige",Umeå,Köln,東京,deltaΔdelta\nc1,c2,c3,c4,c5,c6\n'

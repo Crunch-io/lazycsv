@@ -61,10 +61,21 @@ function run_tox {
     python3.11 -m tox
 }
 
+function run_debug {
+    args="--inplace --force"
+    LAZYCSV_INCLUDE_NUMPY=1 \
+    LAZYCSV_INDEX_DTYPE="uint8_t" \
+    LAZYCSV_DEBUG=1 \
+    CFLAGS="-O0" \
+    python setup.py build_ext $args \
+    && gdb --args python -m pytest ${@:2}
+}
+
 case $1 in
     testrunner) run_testrunner $@ ;;
     test) run_version_tests $@ ;;
     bench) run_benchmarks $@ ;;
+    debug) run_debug $@ ;;
     tox) run_tox $@ ;;
     *) print_help $@ ;;
 esac
