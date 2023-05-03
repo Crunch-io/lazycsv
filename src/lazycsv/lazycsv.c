@@ -111,7 +111,7 @@ typedef struct {
 } LazyCSV;
 
 
-typedef struct lazycsv_iter {
+typedef struct {
     PyObject_HEAD
     PyObject* lazy;
     size_t row;
@@ -119,7 +119,6 @@ typedef struct lazycsv_iter {
     size_t position;
     size_t stop;
     size_t step;
-    void (*fn)(struct lazycsv_iter*, size_t*, size_t*);
     char reversed;
 } LazyCSV_Iter;
 
@@ -332,7 +331,21 @@ static PyObject* LazyCSV_IterNext(PyObject* self) {
 
     size_t offset = SIZE_MAX, len;
 
-    iter->fn(iter, &offset, &len);
+    if (iter->col != SIZE_MAX) {
+        LazyCSV_IterCol(iter, &offset, &len);
+    }
+
+    else if (iter->row != SIZE_MAX) {
+        LazyCSV_IterRow(iter, &offset, &len);
+    }
+
+    else {
+        PyErr_SetString(
+            PyExc_RuntimeError,
+            "could not determine axis for materialization"
+        );
+        return NULL;
+    }
 
     if (offset==SIZE_MAX) {
         PyErr_SetNone(PyExc_StopIteration);
@@ -346,14 +359,17 @@ static PyObject* LazyCSV_IterNext(PyObject* self) {
 static PyObject* LazyCSV_IterAsList(PyObject* self) {
     LazyCSV_Iter* iter = (LazyCSV_Iter*)self;
     LazyCSV* lazy = (LazyCSV*)iter->lazy;
+    void (*fn)(LazyCSV_Iter*, size_t*, size_t*);
 
     size_t size;
 
     if (iter->col != SIZE_MAX) {
         size = lazy->rows - iter->position;
+        fn = LazyCSV_IterCol;
     }
     else if (iter->row != SIZE_MAX) {
         size = lazy->cols - iter->position;
+        fn = LazyCSV_IterRow;
     }
     else {
         PyErr_SetString(
@@ -368,7 +384,7 @@ static PyObject* LazyCSV_IterAsList(PyObject* self) {
 
     PyObject* item;
     for (size_t i = 0; i < size; i++) {
-        iter->fn(iter, &offset, &len);
+        fn(iter, &offset, &len);
         item = PyBytes_FromOffsetAndLen(lazy, offset, len);
         PyList_SET_ITEM(result, i, item);
     }
@@ -383,15 +399,15 @@ static PyObject* LazyCSV_IterAsNumpy(PyObject* self) {
     LazyCSV* lazy = (LazyCSV*)iter->lazy;
 
     size_t size;
-    void (*IterFn)(LazyCSV_Iter*, size_t*, size_t*);
+    void (*fn)(LazyCSV_Iter*, size_t*, size_t*);
 
     if (iter->col != SIZE_MAX) {
-        IterFn = LazyCSV_IterCol;
         size = lazy->rows - iter->position;
+        fn = LazyCSV_IterCol;
     }
     else if (iter->row != SIZE_MAX) {
-        IterFn = LazyCSV_IterRow;
         size = lazy->cols - iter->position;
+        fn = LazyCSV_IterRow;
     }
     else {
         PyErr_SetString(
@@ -409,7 +425,7 @@ static PyObject* LazyCSV_IterAsNumpy(PyObject* self) {
     size_t offset, len=0, max_len=0;
     char* addr;
     for (size_t i=0; i < size; i++) {
-        IterFn(iter, &offset, &len);
+        fn(iter, &offset, &len);
         addr = lazy->_data->data + offset;
         _BufferCache(&buffer, &len, sizeof(size_t));
         _BufferCache(&buffer, addr, len);
@@ -1050,7 +1066,6 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
     size_t row = SIZE_MAX;
     size_t col = SIZE_MAX;
     size_t stop;
-    void (*fn)(LazyCSV_Iter*, size_t*, size_t*);
     char reversed;
 
     static char *kwlist[] = {"row", "col", "reversed", NULL};
@@ -1084,11 +1099,9 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
     }
 
     if (col != SIZE_MAX) {
-        fn = LazyCSV_IterCol;
         stop = ((LazyCSV*)self)->rows;
     }
     else if (row != SIZE_MAX) {
-        fn = LazyCSV_IterRow;
         stop = ((LazyCSV*)self)->cols;
     }
     else {
@@ -1117,7 +1130,6 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
     iter->step = 1;
     iter->stop = stop;
     iter->lazy = self;
-    iter->fn = fn;
 
     Py_INCREF(self);
 
@@ -1200,8 +1212,6 @@ static PyObject* LazyCSV_GetItem(PyObject* self, PyObject* key) {
 
     LazyCSV* lazy = (LazyCSV*)self;
 
-    void (*fn)(LazyCSV_Iter*, size_t*, size_t*);
-
     if (row_is_slice && !col_is_slice) {
         PySliceObject* row_slice = (PySliceObject*)row_obj;
 
@@ -1254,7 +1264,6 @@ static PyObject* LazyCSV_GetItem(PyObject* self, PyObject* key) {
         iter->step = step;
         iter->stop = stop;
         iter->lazy = self;
-        iter->fn = LazyCSV_IterCol;
         Py_INCREF(self);
 
         return (PyObject*)iter;
@@ -1311,7 +1320,6 @@ static PyObject* LazyCSV_GetItem(PyObject* self, PyObject* key) {
         iter->position = start;
         iter->step = step;
         iter->stop = stop;
-        iter->fn = LazyCSV_IterRow;
         iter->lazy = self;
         Py_INCREF(self);
 

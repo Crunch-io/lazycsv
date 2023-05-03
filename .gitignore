@@ -2,8 +2,10 @@ build/
 dist/
 venv/
 .pytest_cache/
+.tox/
 __pycache__/
 tests/fixtures/benchmarks/*
 
 *.so
 *.egg-info/
+*.python-version

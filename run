@@ -1,0 +1,71 @@
+#!/bin/bash
+
+install_deps="python -m pip install numpy pytest &> /dev/null"
+install_pkg="LAZYCSV_INCLUDE_NUMPY=1 python -m pip install -e . &> /dev/null"
+
+versions="3.5 3.6 3.7 3.8 3.9 3.10 3.11"
+
+function run_version_tests {
+    args="--inplace --force"
+    LAZYCSV_INCLUDE_NUMPY=1 python setup.py build_ext $args &> /dev/null \
+        && python -m pytest
+}
+
+function run_benchmarks {
+    python ./tests/benchmark_lazy.py
+}
+
+function print_help {
+    echo "bash commands:"
+    echo "- bench: run benchmarks"
+    echo "- test: run test suite"
+    echo "- testrunner: spin up docker container for testing purposes"
+    echo "- tox: run tox"
+}
+
+function run_testrunner {
+    if [ -z $(command -v docker) ]
+    then
+        echo "environment tests requires docker executable"
+        exit 1
+    fi
+
+    container=lazycsv_testrunner
+    if [[ -z $(docker ps -a --format {{.Names}} | grep $container) ]]
+    then
+        docker run \
+            -v $(pwd):/code \
+            --name $container \
+            -e LAZYCSV_INCLUDE_NUMPY=1 \
+            -e PYENV_ROOT="/root/.pyenv" \
+            -e PATH="/root/.pyenv/shims:/root/.pyenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            -dit debian:bookworm
+        docker exec $container bash \
+            -c "apt-get update && apt-get install git wget tar make gcc build-essential gdb lcov pkg-config libbz2-dev libffi-dev libgdbm-dev libgdbm-compat-dev liblzma-dev libncurses5-dev libreadline6-dev libsqlite3-dev libssl-dev lzma lzma-dev tk-dev uuid-dev zlib1g-dev -y"
+        docker exec $container bash \
+            -c "cd /root && git clone --depth=1 https://github.com/pyenv/pyenv.git .pyenv"
+        docker exec $container bash -c "pyenv install $versions"
+        docker exec $container bash -c "pyenv local $versions"
+        for version in $versions
+        do
+            docker exec $container bash \
+                -c "python$version -m pip install numpy pytest"
+        done
+        docker exec $container bash \
+            -c "python3.11 -m pip install tox"
+    fi
+    docker exec -it $container bash
+}
+
+function run_tox {
+    python3.11 -m tox
+}
+
+case $1 in
+    testrunner) run_testrunner $@ ;;
+    test) run_version_tests $@ ;;
+    bench) run_benchmarks $@ ;;
+    tox) run_tox $@ ;;
+    *) print_help $@ ;;
+esac
+

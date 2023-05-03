@@ -33,10 +33,10 @@ def lazy():
 def file_1000r_1000c():
     tempf = tempfile.NamedTemporaryFile()
     cols, rows = 1000, 1000
-    headers = ",".join(f"col_{i}" for i in range(cols)) + "\n"
+    headers = ",".join("col_{i}".format_map(dict(i=i)) for i in range(cols)) + "\n"
     tempf.write(headers.encode("utf8"))
     for _ in range(rows):
-        row = ",".join(f"{j}" for j in range(cols)) + "\n"
+        row = ",".join("{j}".format_map(dict(j=j)) for j in range(cols)) + "\n"
         tempf.write(row.encode("utf8"))
     tempf.flush()
     yield tempf
@@ -234,8 +234,8 @@ class TestLazyCSV:
 
 class TestLazyCSVIter:
     def test_to_list(self, lazy):
-        _iter = lazy.sequence(col=0)
-        assert _iter.to_list() == [b"0", b"1"]
+        assert lazy.sequence(col=0).to_list() == [b"0", b"1"]
+        assert lazy.sequence(row=1).to_list() == [b'1', b'a1', b'b1']
 
     def test_to_numpy(self):
         actual = b"INDEX,ATTR\n0,a\n10,b\n100,c\n1000,d\n"
@@ -245,6 +245,11 @@ class TestLazyCSVIter:
             if hasattr(_iter, "to_numpy"):
                 arr = _iter.to_numpy()
                 assert arr.tolist() == [b"0", b"10", b"100", b"1000"]
+                assert (lazy
+                    .sequence(row=1)
+                    .to_numpy()
+                    .tolist()
+                ) == [b'10', b'b']
             else:
                 raise RuntimeError(
                     "test suite did not test numpy, recompile while setting"
@@ -375,11 +380,11 @@ class TestBigFiles:
     def test_big_sparse(self):
         tempf = tempfile.NamedTemporaryFile()
         cols, rows = 200, 200
-        headers = ",".join(f"col_{i}" for i in range(cols)) + "\n"
+        headers = ",".join("col_{i}".format_map(dict(i=i)) for i in range(cols)) + "\n"
         tempf.write(headers.encode("utf8"))
         targets = {249, 499, 749, 999}
         for _ in range(rows):
-            row = ",".join(f"{j}" if j in targets else "" for j in range(cols)) + "\n"
+            row = ",".join("{j}".format_map(dict(j=j)) if j in targets else "" for j in range(cols)) + "\n"
             tempf.write(row.encode("utf8"))
         tempf.flush()
 
@@ -433,7 +438,7 @@ class TestEdgecases:
         for sep in ("\n", "\r", "\r\n"):
             for i in range(250, 265):
                 header = "A" * i
-                data = f"{header}{sep}1{sep}2"
+                data = "{header}{sep}1{sep}2".format_map(dict(header=header, sep=sep))
                 with prepped_file(data.encode()) as tempf:
                     lazy = lazycsv.LazyCSV(tempf.name)
                     actual = list(lazy.sequence(col=0))
@@ -445,7 +450,7 @@ class TestEdgecases:
         for sep in ("\n", "\r", "\r\n"):
             for i in range(250, 261):
                 header = "A" * i
-                data = f"{header}{sep}{sep}"
+                data = "{header}{sep}{sep}".format_map(dict(header=header, sep=sep))
                 with prepped_file(data.encode()) as tempf:
                     lazy = lazycsv.LazyCSV(tempf.name)
                     actual = list(lazy.sequence(col=0))

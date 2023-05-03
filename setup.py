@@ -2,11 +2,11 @@ import os
 
 from setuptools import Extension, find_packages, setup
 
-LAZYCSV_DEBUG = int(os.environ.get("LAZYCSV_DEBUG", 0))
+LAZYCSV_DEBUG = int("LAZYCSV_DEBUG" in os.environ)
 LAZYCSV_INDEX_DTYPE = os.environ.get("LAZYCSV_INDEX_DTYPE", "uint16_t")
 
-LAZYCSV_INCLUDE_NUMPY = int(os.environ.get("LAZYCSV_INCLUDE_NUMPY", 0))
-LAZYCSV_INCLUDE_NUMPY_LEGACY = int(os.environ.get("LAZYCSV_INCLUDE_NUMPY_LEGACY", 0))
+LAZYCSV_INCLUDE_NUMPY = int("LAZYCSV_INCLUDE_NUMPY" in os.environ)
+LAZYCSV_INCLUDE_NUMPY_LEGACY = int("LAZYCSV_INCLUDE_NUMPY_LEGACY" in os.environ)
 
 include_dirs = (
     [__import__("numpy").get_include()]
@@ -31,12 +31,12 @@ extensions = [
     )
 ]
 
-with open("README.md", "r") as f:
+with open("README.md", "r", encoding="utf-8") as f:
     long_description = f.read()
 
 setup(
     name="lazycsv",
-    version="1.1.0",
+    version="1.1.1",
     author="Michael Green, Chris Perkins",
     author_email="dev@crunch.io",
     description="an fast, memory efficient csv parser",
@@ -45,7 +45,7 @@ setup(
     packages=find_packages(where="src"),
     extras_require={
         "test": ["pytest", "numpy"],
-        "benchmarks": ["datatable", "pandas", "pyarrow", "polars"],
+        "benchmark": ["datatable", "pandas", "pyarrow", "polars"],
     },
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -55,6 +55,13 @@ setup(
         "Operating System :: POSIX",
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Utilities",
     ],

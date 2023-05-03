@@ -167,6 +167,9 @@ module while still compiling with numpy support.
 
 #### Benchmarks (CPU)
 
+CPU benchmarks are included below, benchmarked on a Ryzen 7 5800X inside a
+stock python3.9 docker container.
+
 ```
 root@aa9d7c7ffb59:/code# python tests/benchmark_lazy.py
 filesize: 0.134gb
@@ -175,9 +178,9 @@ rows=10000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 0.4978358040098101
-parsing cols... time to parse: 1.8409163669857662
-total time: 2.3387521709955763
+indexing lazy... time to index: 0.4746863649925217
+parsing cols... time to parse: 1.5940959230065346
+total time: 2.0687822879990563
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
@@ -199,9 +202,9 @@ rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 4.978727137990063
-parsing cols... time to parse: 23.64216143201338
-total time: 28.620888570003444
+indexing lazy... time to index: 4.287910053972155
+parsing cols... time to parse: 20.004111379006645
+total time: 24.2920214329788
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
@@ -222,9 +225,9 @@ rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 58.97352126000624
-parsing cols... time to parse: 508.8208989979903
-total time: 567.7944202579965
+indexing lazy... time to index: 61.56681043098797
+parsing cols... time to parse: 553.8464674730203
+total time: 615.4132779040083
 
 benchmarking datatable:
  58% |█████████████████████████████▍                    | Reading data Killed
