@@ -16,6 +16,24 @@ def get_size(file_path, unit="bytes"):
         return round(size, 3)
 
 
+def run_lazy(fpath):
+    from lazycsv import lazycsv
+    print("indexing lazy... ", end="\r")
+    ti = perf_counter()
+    lazy = lazycsv.LazyCSV(fpath)
+    te = perf_counter()
+    print(f"indexing lazy... time to index: {te-ti}")
+    for c in range(lazy.cols):
+        col = list(lazy.sequence(col=c))
+        if c % 100 == 0:
+            print(f"parsing cols... {c}/{lazy.cols}", end="\r")
+        del col
+    tf = perf_counter()
+    print(f"parsing cols... time to parse: {tf-te}", end="\r")
+    del lazy
+    print(f"\ntotal time: {tf-ti}")
+
+
 def run_sqlite(fpath):
     import sqlite3, csv
     tempdir = tempfile.TemporaryDirectory()
@@ -54,24 +72,6 @@ def run_sqlite(fpath):
     print(f"parsing cols... time to parse: {tf-te}")
     cur.close()
     conn.close()
-    print(f"\ntotal time: {tf-ti}")
-
-
-def run_lazy(fpath):
-    from lazycsv import lazycsv
-    print("indexing lazy... ", end="\r")
-    ti = perf_counter()
-    lazy = lazycsv.LazyCSV(fpath)
-    te = perf_counter()
-    print(f"indexing lazy... time to index: {te-ti}")
-    for c in range(lazy.cols):
-        col = list(lazy.sequence(col=c))
-        if c % 100 == 0:
-            print(f"parsing cols... {c}/{lazy.cols}", end="\r")
-        del col
-    tf = perf_counter()
-    print(f"parsing cols... time to parse: {tf-te}", end="\r")
-    del lazy
     print(f"\ntotal time: {tf-ti}")
 
 

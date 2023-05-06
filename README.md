@@ -178,9 +178,9 @@ rows=10000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 0.4746863649925217
-parsing cols... time to parse: 1.5940959230065346
-total time: 2.0687822879990563
+indexing lazy... time to index: 0.450414217018988
+parsing cols... time to parse: 1.5233540059998631
+total time: 1.9737682230188511
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
@@ -202,9 +202,9 @@ rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 4.287910053972155
-parsing cols... time to parse: 20.004111379006645
-total time: 24.2920214329788
+indexing lazy... time to index: 4.298127760004718
+parsing cols... time to parse: 18.591125406033825
+total time: 22.889253166038543
 
 benchmarking datatable:
 100% |██████████████████████████████████████████████████| Reading data [done]
