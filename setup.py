@@ -36,7 +36,7 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="lazycsv",
-    version="1.1.1",
+    version="1.1.2",
     author="Michael Green, Chris Perkins",
     author_email="dev@crunch.io",
     description="an fast, memory efficient csv parser",

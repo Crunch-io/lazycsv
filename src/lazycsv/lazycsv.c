@@ -176,46 +176,46 @@ static inline void _Value_ToDisk(size_t value, LazyCSV_RowIndex *ridx,
 }
 
 
-static inline size_t _AnchorValue_FromValue(size_t value, size_t *amap,
+static inline size_t _AnchorValue_FromValue(size_t value,
+                                            LazyCSV_AnchorPoint *amap,
                                             LazyCSV_RowIndex *ridx) {
 
-    size_t *apnt = amap + ((ridx->count - 1) * 2);
+    LazyCSV_AnchorPoint *apnt = amap + ridx->count - 1;
 
-    if (value >= *apnt) {
+    if (value >= apnt->col) {
         // we hit this if there is only one anchor point, or we're iterating
         // over the last anchor point.
-        return *(apnt + 1);
+        return apnt->value;
     }
 
-    size_t* apntp1;
+    LazyCSV_AnchorPoint* apntp1;
     size_t L = 0, R = ridx->count-1;
 
     while (L <= R) {
         size_t M = (L + R) / 2;
-        apnt = amap + (2 * M);
-        apntp1 = apnt + 2;
-        if (value > *apntp1) {
+        apnt = amap + M;
+        apntp1 = apnt + 1;
+        if (value > apntp1->col) {
             L = M + 1;
         }
-        else if (value < *apnt) {
+        else if (value < apnt->col) {
             R = M - 1;
         }
-        else if (value == *apntp1) {
-            return *(apntp1 + 1);
+        else if (value == apntp1->col) {
+            return apntp1->value;
         }
         else {
-            return *(apnt + 1);
+            return apnt->value;
         }
     }
     return SIZE_MAX;
 }
 
-
 static inline size_t _Value_FromIndex(size_t value, LazyCSV_RowIndex *ridx,
                                       char *cmap, char *amap) {
 
     size_t cval = *(INDEX_DTYPE*)(cmap+(value*sizeof(INDEX_DTYPE)));
-    size_t aval = _AnchorValue_FromValue(value, (size_t*)amap, ridx);
+    size_t aval = _AnchorValue_FromValue(value, (LazyCSV_AnchorPoint*)amap, ridx);
     return aval == SIZE_MAX ? aval : cval + aval;
 }
 

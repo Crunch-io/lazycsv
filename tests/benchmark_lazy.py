@@ -172,7 +172,7 @@ def run_polars_scan(fpath):
 
 
 def main():
-    cols = 100000
+    cols = 10000
     rows = 100000
     sparsity = 0.95
     benchmarks = {

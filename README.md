@@ -225,9 +225,9 @@ rows=100000
 sparsity=0.95
 
 benchmarking lazycsv:
-indexing lazy... time to index: 61.56681043098797
-parsing cols... time to parse: 553.8464674730203
-total time: 615.4132779040083
+indexing lazy... time to index: 55.42112316700002
+parsing cols... time to parse: 362.268973717
+total time: 417.690096884
 
 benchmarking datatable:
  58% |█████████████████████████████▍                    | Reading data Killed

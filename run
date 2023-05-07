@@ -1,14 +1,15 @@
 #!/bin/bash
 
-install_deps="python -m pip install numpy pytest &> /dev/null"
-install_pkg="LAZYCSV_INCLUDE_NUMPY=1 python -m pip install -e . &> /dev/null"
-
 versions="3.5 3.6 3.7 3.8 3.9 3.10 3.11"
 
 function run_version_tests {
-    args="--inplace --force"
-    LAZYCSV_INCLUDE_NUMPY=1 python setup.py build_ext $args &> /dev/null \
-        && python -m pytest
+    if [ "--build" = $2 ]
+    then
+        args="--inplace --force"
+        LAZYCSV_INCLUDE_NUMPY=1 LAZYCSV_INDEX_DTYPE=uint8_t \
+            python setup.py build_ext $args &> /dev/null
+    fi
+    python -m pytest
 }
 
 function run_benchmarks {
@@ -53,6 +54,8 @@ function run_testrunner {
         done
         docker exec $container bash \
             -c "python3.11 -m pip install tox"
+    else
+        docker start $container > /dev/null
     fi
     docker exec -it $container bash
 }
