@@ -65,12 +65,11 @@ function run_tox {
 }
 
 function run_debug {
-    args="--inplace --force"
     LAZYCSV_INCLUDE_NUMPY=1 \
     LAZYCSV_INDEX_DTYPE="uint8_t" \
     LAZYCSV_DEBUG=1 \
     CFLAGS="-O0" \
-    python setup.py build_ext $args \
+    python setup.py build_ext --inplace --force \
     && gdb --args python -m pytest ${@:2}
 }
 

@@ -11,8 +11,6 @@
 #include <Python.h>
 #include "structmember.h"
 
-#define DOUBLE_QUOTE 34
-#define COMMA 44
 #define LINE_FEED 10
 #define CARRIAGE_RETURN 13
 
@@ -104,6 +102,7 @@ typedef struct {
     size_t cols;
     int _skip_headers;
     int _unquote;
+    char _quotechar;
     char _newline;
     LazyCSV_Index* _index;
     LazyCSV_File* _data;
@@ -307,8 +306,8 @@ static inline PyObject *PyBytes_FromOffsetAndLen(LazyCSV *lazy, size_t offset,
 
         char strip_quotes = (
             lazy->_unquote
-            && addr[0] == DOUBLE_QUOTE
-            && addr[len-1] == DOUBLE_QUOTE
+            && addr[0] == lazy->_quotechar
+            && addr[len-1] == lazy->_quotechar
         );
 
         if (strip_quotes) {
@@ -604,16 +603,15 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     int skip_headers = 0;
     int unquote = 1;
     Py_ssize_t buffer_capacity = 2097152; // 2**21
-    char* dirname;
+    char *dirname, *delimiter = ",", *quotechar = "\"";
 
     static char* kwlist[] = {
-        "", "skip_headers", "unquote", "buffer_size", "index_dir", NULL
+        "", "delimiter", "quotechar", "skip_headers", "unquote", "buffer_size", "index_dir", NULL
     };
 
     char ok = PyArg_ParseTupleAndKeywords(
-        args, kwargs, "O|ppns", kwlist, &name,
-        &skip_headers, &unquote, &buffer_capacity, &dirname
-    );
+        args, kwargs, "O|ssppns", kwlist, &name, &delimiter, &quotechar,
+        &skip_headers, &unquote, &buffer_capacity, &dirname);
 
     if (!ok) {
         PyErr_SetString(
@@ -750,11 +748,11 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
                           &comma_buffer, anchor_file, &anchor_buffer);
         }
 
-        if (c == DOUBLE_QUOTE) {
+        if (c == *quotechar) {
             quoted = !quoted;
         }
 
-        else if (!quoted && c == COMMA) {
+        else if (!quoted && c == *delimiter) {
             size_t val = i + 1;
             _Value_ToDisk(val, &ridx, &apnt, col_index, comma_file,
                           &comma_buffer, anchor_file, &anchor_buffer);
@@ -923,8 +921,8 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
                 len = ce - cs - 1;
                 if (unquote
-                        && addr[0] == DOUBLE_QUOTE
-                        && addr[len-1] == DOUBLE_QUOTE) {
+                        && addr[0] == *quotechar
+                        && addr[len-1] == *quotechar) {
                     addr = addr+1;
                     len = len-2;
                 }
@@ -991,6 +989,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     self->headers = headers;
     self->_skip_headers = skip_headers;
     self->_unquote = unquote;
+    self->_quotechar = *quotechar;
     self->_newline = newline;
     self->_index = _index;
     self->_data = _data;

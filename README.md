@@ -137,6 +137,25 @@ behavior can be disabled by passing `unquoted=False` to the object constructor.
 (b'', b'"This,that"', b'"Fizz,Buzz"')
 ```
 
+LazyCSV also provides the option to specify a delimiter and a quote character.
+Pass the keywords `delimiter=` and `quotechar=` to the object contstructor to
+use custom values. By default, `delimiter` defaults to `,` and `quotechar`
+defaults to `"`.
+
+```python
+>>> lazy = lazycsv.LazyCSV(
+...     "tests/fixtures/file_delimiter_and_quotechar.csv",
+...     quotechar="|",
+...     delimiter="\t",
+...     unquote=False,
+... )
+...
+>>> open(lazy.name, "rb").read()
+b'INDEX\tATTR\n0\t|A|\n1\t|B|\n'
+>>> list(lazy[:, 1])
+[b'|A|', b'|B|']
+```
+
 ### Numpy
 
 Optional, opt-in numpy support is built into the module. Access to this

@@ -259,6 +259,20 @@ class TestLazyCSVIter:
 
 
 class TestLazyCSVOptions:
+    def test_custom_quotechar_and_delimiter(self):
+        lazy = lazycsv.LazyCSV("tests/fixtures/file_delimiter_and_quotechar.csv", quotechar="|", delimiter="\t")
+        actual = list(list(lazy.sequence(row=i)) for i in range(lazy.rows))
+        expected = [[b'0', b'A'], [b'1', b'B']]
+        assert actual == expected
+
+    def test_custom_quotechar_unquote_false(self):
+        data = "INDEX,ATTR\n0,|A|\n1,|B|\n"
+        with prepped_file(data.encode()) as tempf:
+            lazy = lazycsv.LazyCSV(tempf.name, unquote=False, quotechar="|")
+            actual = list(list(lazy.sequence(row=i)) for i in range(lazy.rows))
+            expected = [[b'0', b'|A|'], [b'1', b'|B|']]
+            assert actual == expected
+
     def test_get_skipped_header_column(self):
         lazy = lazycsv.LazyCSV(FPATH, skip_headers=True)
         actual = list(lazy.sequence(col=0))
