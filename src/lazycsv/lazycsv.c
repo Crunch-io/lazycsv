@@ -176,35 +176,34 @@ static inline void _Value_ToDisk(size_t value, LazyCSV_RowIndex *ridx,
 
 
 static inline size_t _AnchorValue_FromValue(size_t value,
-                                            LazyCSV_AnchorPoint *amap,
-                                            LazyCSV_RowIndex *ridx) {
+                                            char* amap,
+                                            char* ridx) {
 
-    LazyCSV_AnchorPoint *apnt = amap + ridx->count - 1;
+    size_t count = *(size_t*)(ridx+8);
+    char* apnt = amap + ((count - 1)*16);
 
-    if (value >= apnt->col) {
-        // we hit this if there is only one anchor point, or we're iterating
-        // over the last anchor point.
-        return apnt->value;
+    if (value >= *(size_t*)(apnt)) {
+        return *(size_t*)(apnt+8);
     }
 
-    LazyCSV_AnchorPoint* apntp1;
-    size_t L = 0, R = ridx->count-1;
+    char* apntp1;
+    size_t L = 0, R = count-1;
 
     while (L <= R) {
         size_t M = (L + R) / 2;
-        apnt = amap + M;
-        apntp1 = apnt + 1;
-        if (value > apntp1->col) {
+        apnt = amap + M*16;
+        apntp1 = apnt + 16;
+        if (value > *(size_t*)apntp1) {
             L = M + 1;
         }
-        else if (value < apnt->col) {
+        else if (value < *(size_t*)apnt) {
             R = M - 1;
         }
-        else if (value == apntp1->col) {
-            return apntp1->value;
+        else if (value == *(size_t*)apntp1) {
+            return *(size_t*)(apntp1+8);
         }
         else {
-            return apnt->value;
+            return *(size_t*)(apnt+8);
         }
     }
     return SIZE_MAX;
@@ -214,7 +213,7 @@ static inline size_t _Value_FromIndex(size_t value, LazyCSV_RowIndex *ridx,
                                       char *cmap, char *amap) {
 
     size_t cval = *(INDEX_DTYPE*)(cmap+(value*sizeof(INDEX_DTYPE)));
-    size_t aval = _AnchorValue_FromValue(value, (LazyCSV_AnchorPoint*)amap, ridx);
+    size_t aval = _AnchorValue_FromValue(value, amap, (char*)ridx);
     return aval == SIZE_MAX ? aval : cval + aval;
 }
 
