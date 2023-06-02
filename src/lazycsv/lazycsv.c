@@ -122,8 +122,8 @@ typedef struct {
 } LazyCSV_Iter;
 
 
-static inline void _BufferWrite(int fd, LazyCSV_Buffer *buffer, void *data,
-                                size_t size) {
+static inline void LazyCSV_BufferWrite(int fd, LazyCSV_Buffer *buffer,
+                                       void *data, size_t size) {
 
     if (buffer->size + size >= buffer->capacity) {
         write(fd, buffer->data, buffer->size);
@@ -134,8 +134,8 @@ static inline void _BufferWrite(int fd, LazyCSV_Buffer *buffer, void *data,
 }
 
 
-static inline void _BufferCache(LazyCSV_Buffer *buffer, void *data,
-                                size_t size) {
+static inline void LazyCSV_BufferCache(LazyCSV_Buffer *buffer, void *data,
+                                       size_t size) {
 
     if (size == 0) return;
 
@@ -148,36 +148,37 @@ static inline void _BufferCache(LazyCSV_Buffer *buffer, void *data,
 }
 
 
-static inline void _BufferFlush(int comma_file, LazyCSV_Buffer* buffer) {
+static inline void LazyCSV_BufferFlush(int comma_file, LazyCSV_Buffer *buffer) {
     write(comma_file, buffer->data, buffer->size);
     buffer->size = 0;
     fsync(comma_file);
 }
 
 
-static inline void _Value_ToDisk(size_t value, LazyCSV_RowIndex *ridx,
-                                 LazyCSV_AnchorPoint *apnt, size_t col_index,
-                                 int cfile, LazyCSV_Buffer *cbuf, int afile,
-                                 LazyCSV_Buffer *abuf) {
+static inline void LazyCSV_ValueToDisk(size_t value, LazyCSV_RowIndex *ridx,
+                                       LazyCSV_AnchorPoint *apnt,
+                                       size_t col_index, int cfile,
+                                       LazyCSV_Buffer *cbuf, int afile,
+                                       LazyCSV_Buffer *abuf) {
 
     size_t target = value - apnt->value;
 
     if (target > INDEX_DTYPE_MAX) {
         *apnt = (LazyCSV_AnchorPoint){.value = value, .col = col_index+1};
-        _BufferWrite(afile, abuf, apnt, sizeof(LazyCSV_AnchorPoint));
+        LazyCSV_BufferWrite(afile, abuf, apnt, sizeof(LazyCSV_AnchorPoint));
         ridx->count += 1;
         target = 0;
     }
 
     INDEX_DTYPE item = target;
 
-    _BufferWrite(cfile, cbuf, &item, sizeof(INDEX_DTYPE));
+    LazyCSV_BufferWrite(cfile, cbuf, &item, sizeof(INDEX_DTYPE));
 }
 
 
-static inline size_t _AnchorValue_FromValue(size_t value,
-                                            LazyCSV_AnchorPoint *amap,
-                                            LazyCSV_RowIndex *ridx) {
+static inline size_t LazyCSV_AnchorValueFromValue(size_t value,
+                                                  LazyCSV_AnchorPoint *amap,
+                                                  LazyCSV_RowIndex *ridx) {
 
     LazyCSV_AnchorPoint *apnt = amap + ridx->count - 1;
 
@@ -210,17 +211,21 @@ static inline size_t _AnchorValue_FromValue(size_t value,
     return SIZE_MAX;
 }
 
-static inline size_t _Value_FromIndex(size_t value, LazyCSV_RowIndex *ridx,
-                                      char *cmap, char *amap) {
 
-    size_t cval = *(INDEX_DTYPE*)(cmap+(value*sizeof(INDEX_DTYPE)));
-    size_t aval = _AnchorValue_FromValue(value, (LazyCSV_AnchorPoint*)amap, ridx);
+static inline size_t LazyCSV_ValueFromIndex(size_t value,
+                                            LazyCSV_RowIndex *ridx, char *cmap,
+                                            char *amap) {
+
+    size_t cval = *(INDEX_DTYPE *)(cmap + (value * sizeof(INDEX_DTYPE)));
+    size_t aval =
+        LazyCSV_AnchorValueFromValue(value, (LazyCSV_AnchorPoint *)amap, ridx);
     return aval == SIZE_MAX ? aval : cval + aval;
 }
 
 
 static inline void LazyCSV_IterCol(LazyCSV_Iter *iter, size_t *offset,
                                    size_t *len) {
+
     LazyCSV *lazy = (LazyCSV *)iter->lazy;
 
     if (iter->position < iter->stop) {
@@ -242,8 +247,8 @@ static inline void LazyCSV_IterCol(LazyCSV_Iter *iter, size_t *offset,
         char* aidx = anchors+ridx->index;
         char* cidx = commas+((lazy->cols+1)*position*sizeof(INDEX_DTYPE));
 
-        size_t cs = _Value_FromIndex(iter->col, ridx, cidx, aidx);
-        size_t ce = _Value_FromIndex(iter->col + 1, ridx, cidx, aidx);
+        size_t cs = LazyCSV_ValueFromIndex(iter->col, ridx, cidx, aidx);
+        size_t ce = LazyCSV_ValueFromIndex(iter->col + 1, ridx, cidx, aidx);
 
         *len = ce - cs - 1;
         *offset = cs;
@@ -275,13 +280,14 @@ static inline void LazyCSV_IterRow(LazyCSV_Iter *iter, size_t *offset,
         char *aidx = anchors + ridx->index;
         char *cidx = commas + ((lazy->cols + 1) * row * sizeof(INDEX_DTYPE));
 
-        size_t cs = _Value_FromIndex(position, ridx, cidx, aidx);
-        size_t ce = _Value_FromIndex(position + 1, ridx, cidx, aidx);
+        size_t cs = LazyCSV_ValueFromIndex(position, ridx, cidx, aidx);
+        size_t ce = LazyCSV_ValueFromIndex(position + 1, ridx, cidx, aidx);
 
         *len = ce - cs - 1;
         *offset = cs;
     }
 }
+
 
 static inline PyObject *PyBytes_FromOffsetAndLen(LazyCSV *lazy, size_t offset,
                                                  size_t len) {
@@ -434,8 +440,8 @@ static PyObject* LazyCSV_IterAsNumpy(PyObject* self) {
             LazyCSV_IterCol(iter, &offset, &len);
         }
         addr = lazy->_data->data + offset;
-        _BufferCache(&buffer, &len, sizeof(size_t));
-        _BufferCache(&buffer, addr, len);
+        LazyCSV_BufferCache(&buffer, &len, sizeof(size_t));
+        LazyCSV_BufferCache(&buffer, addr, len);
         max_len = len > max_len ? len : max_len;
     }
 
@@ -520,11 +526,10 @@ static PyTypeObject LazyCSV_IterType = {
 };
 
 
-static inline void _TempDir_AsString(PyObject** tempdir, char** dirname) {
-    PyObject* tempfile = PyImport_ImportModule("tempfile");
-    PyObject* tempdir_obj = PyObject_GetAttrString(
-        tempfile, "TemporaryDirectory"
-    );
+static inline void LazyCSV_TempDirAsString(PyObject **tempdir, char **dirname) {
+    PyObject *tempfile = PyImport_ImportModule("tempfile");
+    PyObject *tempdir_obj =
+        PyObject_GetAttrString(tempfile, "TemporaryDirectory");
 
     *tempdir = PyObject_CallObject(tempdir_obj, NULL);
     PyObject* dirname_obj = PyObject_GetAttrString(*tempdir, "name");
@@ -538,61 +543,48 @@ static inline void _TempDir_AsString(PyObject** tempdir, char** dirname) {
 }
 
 
-static inline void _FullName_FromName(PyObject *name, PyObject **fullname_obj,
-                                      char **fullname) {
+static inline void LazyCSV_FullNameFromName(PyObject *name,
+                                            PyObject **fullname_obj,
+                                            char **fullname) {
 
     PyObject *os_path = PyImport_ImportModule("os.path");
+    PyObject *isfile = PyObject_CallMethod(os_path, "isfile", "O", name);
+
     PyObject *builtins = PyImport_ImportModule("builtins");
-
     PyObject* global_vars = PyObject_CallMethod(builtins, "globals", NULL);
-
-    PyObject* _dirname;
 
     // borrowed ref
     PyObject* __file__ = PyDict_GetItemString(global_vars, "__file__");
 
-    if (!__file__) {
-        // if run in say, the python shell, there is no __file__, so use cwd
-        // of the interpreter
-        PyObject *os = PyImport_ImportModule("os");
-        _dirname = PyObject_CallMethod(os, "getcwd", NULL);
-        Py_DECREF(os);
+    if (isfile == Py_True) {
+        // owned reference which we keep
+        *fullname_obj = PyObject_CallMethod(os_path, "abspath", "O", name);
+        *fullname = PyBytes_AsString(*fullname_obj);
     }
 
-    else {
-        _dirname = PyObject_CallMethod(os_path, "dirname", "O", __file__);
-    }
+    else if (__file__) {
+        // also check to see if file is relative to the caller if not
+        // previously found
+        PyObject *_dirname =
+            PyObject_CallMethod(os_path, "dirname", "O", __file__);
 
-    PyObject *dirname = PyUnicode_AsUTF8String(_dirname);
-    Py_DECREF(_dirname);
+        PyObject *dirname = PyUnicode_AsUTF8String(_dirname);
 
-    PyObject *abspath = PyObject_CallMethod(os_path, "abspath", "O", name);
-
-    PyObject *bytes = PyObject_GetAttrString(builtins, "bytes");
-    PyObject *startswith =
-        PyObject_CallMethod(bytes, "startswith", "OO", abspath, dirname);
-
-    if (startswith == Py_True) {
-        *fullname_obj = abspath;
-        Py_INCREF(abspath);
-        *fullname = PyBytes_AsString(abspath);
-    }
-
-    else {
         PyObject *joined =
             PyObject_CallMethod(os_path, "join", "(OO)", dirname, name);
+
         *fullname_obj = PyObject_CallMethod(os_path, "abspath", "O", joined);
         *fullname = PyBytes_AsString(*fullname_obj);
+
         Py_DECREF(joined);
+        Py_DECREF(_dirname);
+        Py_DECREF(dirname);
     }
 
     Py_DECREF(os_path);
+    Py_DECREF(isfile);
     Py_DECREF(builtins);
     Py_DECREF(global_vars);
-    Py_DECREF(dirname);
-    Py_DECREF(abspath);
-    Py_DECREF(bytes);
-    Py_DECREF(startswith);
 }
 
 
@@ -647,7 +639,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
     PyObject* fullname_obj;
     char* fullname;
-    _FullName_FromName(name, &fullname_obj, &fullname);
+    LazyCSV_FullNameFromName(name, &fullname_obj, &fullname);
 
     Py_DECREF(name);
 
@@ -678,7 +670,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
     PyObject* tempdir = NULL;
     if (!dirname) {
-        _TempDir_AsString(&tempdir, &dirname);
+        LazyCSV_TempDirAsString(&tempdir, &dirname);
     }
 
     char* comma_index = tempnam(dirname, "LzyC_");
@@ -738,14 +730,14 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
             apnt = (LazyCSV_AnchorPoint){.value = val, .col = col_index};
 
-            _BufferWrite(anchor_file, &anchor_buffer, &apnt,
-                         sizeof(LazyCSV_AnchorPoint));
+            LazyCSV_BufferWrite(anchor_file, &anchor_buffer, &apnt,
+                                sizeof(LazyCSV_AnchorPoint));
 
             ridx.index += ridx.count*sizeof(LazyCSV_AnchorPoint);
             ridx.count = 1;
 
-            _Value_ToDisk(val, &ridx, &apnt, col_index, comma_file,
-                          &comma_buffer, anchor_file, &anchor_buffer);
+            LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
+                                &comma_buffer, anchor_file, &anchor_buffer);
         }
 
         if (c == *quotechar) {
@@ -754,8 +746,8 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
         else if (!quoted && c == *delimiter) {
             size_t val = i + 1;
-            _Value_ToDisk(val, &ridx, &apnt, col_index, comma_file,
-                          &comma_buffer, anchor_file, &anchor_buffer);
+            LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
+                                &comma_buffer, anchor_file, &anchor_buffer);
             if (cols == SIZE_MAX || col_index < cols) {
                 col_index += 1;
             }
@@ -784,8 +776,8 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             size_t val = i + 1;
 
             if (overflow == SIZE_MAX) {
-                _Value_ToDisk(val, &ridx, &apnt, col_index, comma_file,
-                              &comma_buffer, anchor_file, &anchor_buffer);
+                LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
+                                    &comma_buffer, anchor_file, &anchor_buffer);
             }
             else {
                 overflow = SIZE_MAX;
@@ -800,9 +792,10 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
                     "column underflow encountered while parsing CSV, "
                     "missing values will be filled with the empty bytestring!";
                 while (col_index < cols) {
-                    _Value_ToDisk(val, &ridx, &apnt, col_index, comma_file,
-                                  &comma_buffer, anchor_file, &anchor_buffer);
-                    col_index += 1;
+                  LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
+                                      &comma_buffer, anchor_file,
+                                      &anchor_buffer);
+                  col_index += 1;
                 }
             }
 
@@ -812,8 +805,8 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
                               : c;
             }
 
-            _BufferWrite(newline_file, &newline_buffer, &ridx,
-                         sizeof(LazyCSV_RowIndex));
+            LazyCSV_BufferWrite(newline_file, &newline_buffer, &ridx,
+                                sizeof(LazyCSV_RowIndex));
 
             col_index = 0;
             row_index += 1;
@@ -827,11 +820,11 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     char overcount = last_char == CARRIAGE_RETURN || last_char == LINE_FEED;
 
     if (!overcount) {
-        _Value_ToDisk(file_len + 1, &ridx, &apnt, col_index, comma_file,
-                      &comma_buffer, anchor_file, &anchor_buffer);
+        LazyCSV_ValueToDisk(file_len + 1, &ridx, &apnt, col_index, comma_file,
+                            &comma_buffer, anchor_file, &anchor_buffer);
 
-        _BufferWrite(newline_file, &newline_buffer, &ridx,
-                     sizeof(LazyCSV_RowIndex));
+        LazyCSV_BufferWrite(newline_file, &newline_buffer, &ridx,
+                            sizeof(LazyCSV_RowIndex));
     }
 
     if (overflow_warning)
@@ -851,9 +844,9 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     rows = row_index - overcount + skip_headers;
     cols = cols + 1;
 
-    _BufferFlush(comma_file, &comma_buffer);
-    _BufferFlush(anchor_file, &anchor_buffer);
-    _BufferFlush(newline_file, &newline_buffer);
+    LazyCSV_BufferFlush(comma_file, &comma_buffer);
+    LazyCSV_BufferFlush(anchor_file, &anchor_buffer);
+    LazyCSV_BufferFlush(newline_file, &newline_buffer);
 
     close(comma_file);
     close(anchor_file);
@@ -908,10 +901,11 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
         size_t cs, ce;
         size_t len;
-        char* addr;
+        char *addr;
         for (size_t i = 0; i < cols; i++) {
-            cs = _Value_FromIndex(i, ridx, comma_memmap, anchor_memmap);
-            ce = _Value_FromIndex(i+1, ridx, comma_memmap, anchor_memmap);
+            cs = LazyCSV_ValueFromIndex(i, ridx, comma_memmap, anchor_memmap);
+            ce = LazyCSV_ValueFromIndex(i + 1, ridx, comma_memmap,
+                                        anchor_memmap);
 
             if (ce - cs == 1) {
                 PyTuple_SET_ITEM(headers, i, PyBytes_FromString(""));
@@ -1183,8 +1177,8 @@ static PyObject* LazyCSV_GetValue(PyObject* self, PyObject* r, PyObject* c) {
     char* aidx = anchors+ridx->index;
     char* cidx = commas+((lazy->cols+1)*row*sizeof(INDEX_DTYPE));
 
-    size_t cs = _Value_FromIndex((size_t)col, ridx, cidx, aidx);
-    size_t ce = _Value_FromIndex((size_t)col + 1, ridx, cidx, aidx);
+    size_t cs = LazyCSV_ValueFromIndex((size_t)col, ridx, cidx, aidx);
+    size_t ce = LazyCSV_ValueFromIndex((size_t)col + 1, ridx, cidx, aidx);
 
     size_t len = ce - cs - 1;
 

@@ -260,7 +260,7 @@ class TestLazyCSVIter:
 
 class TestLazyCSVOptions:
     def test_custom_quotechar_and_delimiter(self):
-        lazy = lazycsv.LazyCSV("tests/fixtures/file_delimiter_and_quotechar.csv", quotechar="|", delimiter="\t")
+        lazy = lazycsv.LazyCSV("fixtures/file_delimiter_and_quotechar.csv", quotechar="|", delimiter="\t")
         actual = list(list(lazy.sequence(row=i)) for i in range(lazy.rows))
         expected = [[b'0', b'A'], [b'1', b'B']]
         assert actual == expected
