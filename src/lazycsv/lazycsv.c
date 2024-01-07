@@ -1382,7 +1382,9 @@ PyDoc_STRVAR(
     "lazycsv.LazyCSV(\n"
     "    filepath,\n"
     "    /\n"
-    "    unquoted: bool=True,\n"
+    "    delimiter: str=',',\n"
+    "    quotechar: str='\"',\n"
+    "    unquote: bool=True,\n"
     "    skip_headers: bool=False,\n"
     "    buffer_size: int=2**21,\n"
     "    index_dir: str=None,\n"
@@ -1395,7 +1397,11 @@ PyDoc_STRVAR(
     "\n\n"
     "Options\n"
     "-------\n"
-    "unquoted: bool=True -- if True, a quoted field will be\n"
+    "delimiter: ',' -- character used to demarcate the separation\n"
+    "    of two fields. Should only be a single char.\n"
+    "quotechar: '\"' -- character used to ensure contents belong\n"
+    "    to a single field. Should only be a single char.\n"
+    "unquote: bool=True -- if True, a quoted field will be\n"
     "    stripped of quotes on parsing. i.e. `,\"goo\\nbar\",`\n"
     "    will return 'goo\\nbar'.\n"
     "skip_headers: bool=False -- skips parsing out header\n"
@@ -1411,6 +1417,7 @@ PyDoc_STRVAR(
     "Returns\n"
     "-------\n"
     "self\n"
+
 );
 
 
