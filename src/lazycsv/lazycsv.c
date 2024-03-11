@@ -140,7 +140,8 @@ static inline void LazyCSV_BufferCache(LazyCSV_Buffer *buffer, void *data,
     if (size == 0) return;
 
     if (buffer->size + size >= buffer->capacity) {
-        buffer->capacity *= 1.5;
+        buffer->capacity += size;
+        buffer->capacity *= 1.3;
         buffer->data = realloc(buffer->data, buffer->capacity);
     }
     memcpy(&buffer->data[buffer->size], data, size);
@@ -192,7 +193,7 @@ static inline size_t LazyCSV_AnchorValueFromValue(size_t value,
     size_t L = 0, R = ridx->count-1;
 
     while (L <= R) {
-        size_t M = (L + R) / 2;
+        size_t M = L + ((R - L)/2);
         apnt = amap + M;
         apntp1 = apnt + 1;
         if (value > apntp1->col) {
@@ -996,25 +997,20 @@ unmap_memmaps:
     munmap(anchor_memmap, anchor_st.st_size);
     munmap(newline_memmap, newline_st.st_size);
     Py_DECREF(headers);
-    goto close_newline;
 
 close_newline:
     close(newline_fd);
-    goto close_anchor;
 
 close_anchor:
     close(anchor_fd);
-    goto close_comma;
 
 close_comma:
     close(comma_fd);
     munmap(file, ust.st_size);
     Py_XDECREF(tempdir);
-    goto close_ufd;
 
 close_ufd:
     close(ufd);
-    goto return_err;
 
 return_err:
     return NULL;
