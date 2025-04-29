@@ -305,7 +305,7 @@ static inline PyObject *PyBytes_FromOffsetAndLen(LazyCSV *lazy, size_t offset,
         break;
     case 1:
         addr = lazy->_data->data + offset;
-        result = lazy->_cache->items[(size_t)*addr];
+        result = lazy->_cache->items[(unsigned char)*addr];
         Py_INCREF(result);
         break;
     default:
@@ -324,8 +324,16 @@ static inline PyObject *PyBytes_FromOffsetAndLen(LazyCSV *lazy, size_t offset,
 
         result = PyBytes_FromStringAndSize(addr, len);
     }
+    if (!result) goto failed_allocation;
 
     return result;
+
+failed_allocation:
+    PyErr_SetString(
+        PyExc_RuntimeError,
+        "could not allocate memory for new object"
+    );
+    return NULL;
 }
 
 
@@ -382,6 +390,13 @@ static PyObject* LazyCSV_IterAsList(PyObject* self) {
     }
 
     PyObject* result = PyList_New(size);
+    if (!result) {
+        PyErr_SetString(
+            PyExc_RuntimeError,
+            "could not allocate memory for new list"
+        );
+        return NULL;
+    }
     size_t offset=SIZE_MAX, len=0;
 
     PyObject* item;
@@ -394,10 +409,15 @@ static PyObject* LazyCSV_IterAsList(PyObject* self) {
             LazyCSV_IterCol(iter, &offset, &len);
         }
         item = PyBytes_FromOffsetAndLen(lazy, offset, len);
+        if (!item) goto failed_allocation;
         PyList_SET_ITEM(result, i, item);
     }
 
     return result;
+
+failed_allocation:
+    Py_DECREF(result);
+    return NULL;
 }
 
 
@@ -944,7 +964,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     _cache->empty = PyBytes_FromString("");
     _cache->items = malloc(UCHAR_MAX*sizeof(PyObject*));
 
-    for (size_t i = 0; i < UCHAR_MAX; i++)
+    for (unsigned char i = 0; i < UCHAR_MAX; i++)
         _cache->items[i] = PyBytes_FromFormat("%c", (int)i);
 
     LazyCSV_File* _commas = malloc(sizeof(LazyCSV_File));

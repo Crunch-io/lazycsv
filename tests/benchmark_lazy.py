@@ -172,9 +172,9 @@ def run_polars_scan(fpath):
 
 
 def main():
-    cols = 10000
-    rows = 100000
-    sparsity = 0.95
+    cols = 5000
+    rows = 50000
+    sparsity = 0.50
     benchmarks = {
         "lazycsv": run_lazy,
         # "pandas": run_pandas,
@@ -186,7 +186,9 @@ def main():
     }
     filename = f"benchmark_{rows}r_{cols}c_{int(sparsity*100)}%.csv"
     HERE = os.path.abspath(os.path.dirname(__file__))
-    filepath = os.path.join(HERE, f"fixtures/benchmarks/{filename}")
+    dir = os.path.join(HERE, f"fixtures/benchmarks")
+    os.makedirs(dir, exist_ok=True)
+    filepath = os.path.join(dir, filename)
     if os.path.isfile(filepath):
         name = filepath
         tempf = None
