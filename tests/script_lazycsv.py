@@ -10,3 +10,4 @@ data = [
     list(lazy[:, i])
     for i in range(lazy.cols)
 ]
+

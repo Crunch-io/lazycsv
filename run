@@ -1,6 +1,6 @@
 #!/bin/bash
 
-versions="3.5 3.6 3.7 3.8 3.9 3.10 3.11"
+versions="3.5 3.6 3.7 3.8 3.9 3.10 3.11 3.12 3.13"
 
 function run_version_tests {
     if [ "--build" = $2 ]
@@ -50,7 +50,7 @@ function run_testrunner {
         for version in $versions
         do
             docker exec $container bash \
-                -c "python$version -m pip install numpy pytest"
+                -c "python$version -m pip install numpy pytest && python$version -m pip install -e /code"
         done
         docker exec $container bash \
             -c "python3.11 -m pip install tox"
