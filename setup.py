@@ -1,6 +1,7 @@
 import os
 
 from setuptools import Extension, find_packages, setup
+from setuptools.command.build_ext import build_ext
 
 LAZYCSV_DEBUG = int("LAZYCSV_DEBUG" in os.environ)
 LAZYCSV_INDEX_DTYPE = os.environ.get("LAZYCSV_INDEX_DTYPE", "uint16_t")
@@ -13,6 +14,32 @@ include_dirs = (
     if (LAZYCSV_INCLUDE_NUMPY | LAZYCSV_INCLUDE_NUMPY_LEGACY)
     else []
 )
+
+if not LAZYCSV_INDEX_DTYPE.startswith(("unsigned", "uint")):
+    raise ValueError("specified LAZYCSV_INDEX_DTYPE must be an unsigned integer type")
+
+_MACRO_STAMP = (
+    "INDEX_DTYPE={} INCLUDE_NUMPY={} INCLUDE_NUMPY_LEGACY={} DEBUG={}"
+    .format(LAZYCSV_INDEX_DTYPE, LAZYCSV_INCLUDE_NUMPY,
+            LAZYCSV_INCLUDE_NUMPY_LEGACY, LAZYCSV_DEBUG)
+)
+
+
+class build_ext_force_on_macro_change(build_ext):
+    """Force a rebuild when compile-time macros change."""
+
+    def build_extensions(self):
+        stamp_path = os.path.join(self.build_temp, ".lazycsv_macros")
+        os.makedirs(self.build_temp, exist_ok=True)
+        prev = ""
+        if os.path.exists(stamp_path):
+            with open(stamp_path) as f:
+                prev = f.read().strip()
+        if prev != _MACRO_STAMP:
+            self.force = True
+            with open(stamp_path, "w") as f:
+                f.write(_MACRO_STAMP)
+        super().build_extensions()
 
 if not LAZYCSV_INDEX_DTYPE.startswith(("unsigned", "uint")):
     raise ValueError("specified LAZYCSV_INDEX_DTYPE must be an unsigned integer type")
@@ -69,4 +96,5 @@ setup(
     ],
     package_dir={"": "src"},
     ext_modules=extensions,
+    cmdclass={"build_ext": build_ext_force_on_macro_change},
 )

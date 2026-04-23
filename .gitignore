@@ -1,6 +1,7 @@
 build/
 dist/
 venv/
+.venv/
 .pytest_cache/
 .tox/
 .local/

@@ -104,6 +104,7 @@ typedef struct {
     int _unquote;
     char _quotechar;
     char _newline;
+    int _owns_index;
     LazyCSV_Index* _index;
     LazyCSV_File* _data;
     LazyCSV_Cache* _cache;
@@ -1065,6 +1066,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     self->_unquote = unquote;
     self->_quotechar = *quotechar;
     self->_newline = newline;
+    self->_owns_index = 1;
     self->_index = _index;
     self->_data = _data;
     self->_cache = _cache;
@@ -1105,9 +1107,12 @@ static void LazyCSV_Destruct(LazyCSV* self) {
     close(self->_index->anchors->fd);
     close(self->_index->newlines->fd);
 
-    remove(self->_index->commas->name);
-    remove(self->_index->anchors->name);
-    remove(self->_index->newlines->name);
+    if (self->_owns_index) {
+        remove(self->_index->commas->name);
+        remove(self->_index->anchors->name);
+        remove(self->_index->newlines->name);
+        Py_XDECREF(self->_index->dir);
+    }
 
     free(self->_index->commas->name);
     free(self->_index->anchors->name);
@@ -1116,8 +1121,6 @@ static void LazyCSV_Destruct(LazyCSV* self) {
     free(self->_index->commas);
     free(self->_index->anchors);
     free(self->_index->newlines);
-
-    Py_XDECREF(self->_index->dir);
 
     Py_DECREF(self->_cache->empty);
     for (size_t i = 0; i <= UCHAR_MAX; i++)
@@ -1434,12 +1437,280 @@ static PyMemberDef LazyCSV_Members[] = {
 };
 
 
+static PyObject *LazyCSV_Reduce(PyObject *self, PyObject *Py_UNUSED(ignored)) {
+    LazyCSV *lazy = (LazyCSV *)self;
+
+    // Once serialized, index files must outlive this object
+    lazy->_owns_index = 0;
+
+    char qc[2] = {lazy->_quotechar, '\0'};
+
+    PyObject *args = Py_BuildValue(
+        "(OssnniiiIsss)", lazy->name, ",", qc, (Py_ssize_t)lazy->rows,
+        (Py_ssize_t)lazy->cols, (int)lazy->_skip_headers, (int)lazy->_unquote,
+        (int)lazy->_newline, (unsigned int)sizeof(INDEX_DTYPE),
+        lazy->_index->commas->name,
+        lazy->_index->anchors->name,
+        lazy->_index->newlines->name);
+
+    if (!args)
+        return NULL;
+
+    PyObject *mod = PyImport_ImportModule("lazycsv.lazycsv");
+    if (!mod) {
+        Py_DECREF(args);
+        return NULL;
+    }
+    PyObject *rebuild = PyObject_GetAttrString(mod, "_rebuild");
+    Py_DECREF(mod);
+    if (!rebuild) {
+        Py_DECREF(args);
+        return NULL;
+    }
+
+    PyObject *result = PyTuple_Pack(2, rebuild, args);
+    Py_DECREF(rebuild);
+    Py_DECREF(args);
+    return result;
+}
+
+
+static PyObject *LazyCSV_FromIndex(PyObject *cls, PyObject *args) {
+    PyObject *name_obj;
+    char *delimiter, *quotechar;
+    Py_ssize_t rows, cols;
+    int skip_headers, unquote, newline;
+    unsigned int index_dtype_size;
+    char *comma_path, *anchor_path, *newline_path;
+
+    if (!PyArg_ParseTuple(args, "OssnniiiIsss", &name_obj, &delimiter,
+                          &quotechar, &rows, &cols, &skip_headers, &unquote,
+                          &newline, &index_dtype_size, &comma_path,
+                          &anchor_path, &newline_path)) {
+        return NULL;
+    }
+
+    if (index_dtype_size != sizeof(INDEX_DTYPE)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "index was built with a different INDEX_DTYPE size");
+        return NULL;
+    }
+
+    Py_INCREF(name_obj);
+    if (PyUnicode_CheckExact(name_obj)) {
+        PyObject *_name = PyUnicode_AsUTF8String(name_obj);
+        Py_DECREF(name_obj);
+        name_obj = _name;
+    }
+
+    char *fullname = PyBytes_AsString(name_obj);
+
+    int ufd = open(fullname, O_RDONLY);
+    if (ufd == -1) {
+        Py_DECREF(name_obj);
+        PyErr_SetString(PyExc_FileNotFoundError,
+                        "unable to open data file");
+        return NULL;
+    }
+
+    struct stat ust;
+    if (fstat(ufd, &ust) < 0) {
+        close(ufd);
+        Py_DECREF(name_obj);
+        PyErr_SetString(PyExc_RuntimeError, "unable to stat data file");
+        return NULL;
+    }
+
+    char *file = mmap(NULL, ust.st_size, PROT_READ, MAP_PRIVATE, ufd, 0);
+    if (file == MAP_FAILED) {
+        close(ufd);
+        Py_DECREF(name_obj);
+        PyErr_SetString(PyExc_RuntimeError, "unable to mmap data file");
+        return NULL;
+    }
+
+    // duplicate path strings so they can be freed independently
+    char *c_path = strdup(comma_path);
+    char *a_path = strdup(anchor_path);
+    char *n_path = strdup(newline_path);
+
+    int comma_file = open(c_path, O_RDONLY);
+    if (comma_file < 0) {
+        PyErr_SetString(PyExc_FileNotFoundError,
+                        "unable to open comma index file");
+        goto err_paths;
+    }
+
+    int anchor_file = open(a_path, O_RDONLY);
+    if (anchor_file < 0) {
+        close(comma_file);
+        PyErr_SetString(PyExc_FileNotFoundError,
+                        "unable to open anchor index file");
+        goto err_paths;
+    }
+
+    int newline_file = open(n_path, O_RDONLY);
+    if (newline_file < 0) {
+        close(comma_file);
+        close(anchor_file);
+        PyErr_SetString(PyExc_FileNotFoundError,
+                        "unable to open newline index file");
+        goto err_paths;
+    }
+
+    struct stat comma_st, anchor_st, newline_st;
+    if (fstat(comma_file, &comma_st) < 0 ||
+        fstat(anchor_file, &anchor_st) < 0 ||
+        fstat(newline_file, &newline_st) < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "unable to stat index files");
+        close(comma_file);
+        close(anchor_file);
+        close(newline_file);
+        goto err_paths;
+    }
+
+    // sanity check: newline file should contain one RowIndex per row
+    size_t expected_rows_in_file = rows + (skip_headers ? 0 : 1);
+    if ((size_t)newline_st.st_size != expected_rows_in_file * sizeof(LazyCSV_RowIndex)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "newline index file size does not match expected row count");
+        close(comma_file);
+        close(anchor_file);
+        close(newline_file);
+        goto err_paths;
+    }
+
+    char *comma_memmap =
+        mmap(NULL, comma_st.st_size, PROT_READ, MAP_PRIVATE, comma_file, 0);
+    char *anchor_memmap =
+        mmap(NULL, anchor_st.st_size, PROT_READ, MAP_PRIVATE, anchor_file, 0);
+    char *newline_memmap =
+        mmap(NULL, newline_st.st_size, PROT_READ, MAP_PRIVATE, newline_file, 0);
+
+    // parse headers from the data file + index
+    PyObject *headers;
+    if (!skip_headers) {
+        headers = PyTuple_New(cols);
+        LazyCSV_RowIndex *ridx = (LazyCSV_RowIndex *)newline_memmap;
+        size_t cs, ce, len;
+        char *addr;
+        for (size_t i = 0; i < (size_t)cols; i++) {
+            cs = LazyCSV_ValueFromIndex(i, ridx, comma_memmap, anchor_memmap);
+            ce = LazyCSV_ValueFromIndex(i + 1, ridx, comma_memmap,
+                                        anchor_memmap);
+            if (ce - cs == 1) {
+                PyTuple_SET_ITEM(headers, i, PyBytes_FromString(""));
+            } else {
+                addr = file + cs;
+                len = ce - cs - 1;
+                if (unquote && addr[0] == *quotechar &&
+                    addr[len - 1] == *quotechar) {
+                    addr = addr + 1;
+                    len = len - 2;
+                }
+                PyTuple_SET_ITEM(headers, i,
+                                 PyBytes_FromStringAndSize(addr, len));
+            }
+        }
+    } else {
+        headers = PyTuple_New(0);
+    }
+
+    LazyCSV *self = (LazyCSV *)((PyTypeObject *)cls)->tp_alloc(
+        (PyTypeObject *)cls, 0);
+    if (!self) {
+        munmap(comma_memmap, comma_st.st_size);
+        munmap(anchor_memmap, anchor_st.st_size);
+        munmap(newline_memmap, newline_st.st_size);
+        close(comma_file);
+        close(anchor_file);
+        close(newline_file);
+        Py_DECREF(headers);
+        PyErr_SetString(PyExc_MemoryError,
+                        "unable to allocate LazyCSV object");
+        goto err_paths;
+    }
+
+    LazyCSV_Cache *_cache = malloc(sizeof(LazyCSV_Cache));
+    _cache->empty = PyBytes_FromString("");
+    _cache->items = malloc((UCHAR_MAX + 1) * sizeof(PyObject *));
+    for (size_t i = 0; i <= UCHAR_MAX; i++)
+        _cache->items[i] = PyBytes_FromFormat("%c", (int)i);
+
+    LazyCSV_File *_commas = malloc(sizeof(LazyCSV_File));
+    _commas->name = c_path;
+    _commas->data = comma_memmap;
+    _commas->st = comma_st;
+    _commas->fd = comma_file;
+
+    LazyCSV_File *_anchors = malloc(sizeof(LazyCSV_File));
+    _anchors->name = a_path;
+    _anchors->data = anchor_memmap;
+    _anchors->st = anchor_st;
+    _anchors->fd = anchor_file;
+
+    LazyCSV_File *_newlines = malloc(sizeof(LazyCSV_File));
+    _newlines->name = n_path;
+    _newlines->data = newline_memmap;
+    _newlines->st = newline_st;
+    _newlines->fd = newline_file;
+
+    LazyCSV_Index *_index = malloc(sizeof(LazyCSV_Index));
+    _index->dir = NULL;
+    _index->commas = _commas;
+    _index->newlines = _newlines;
+    _index->anchors = _anchors;
+
+    LazyCSV_File *_data = malloc(sizeof(LazyCSV_File));
+    _data->name = fullname;
+    _data->fd = ufd;
+    _data->data = file;
+    _data->st = ust;
+
+    self->rows = rows;
+    self->cols = cols;
+    self->name = name_obj;
+    self->headers = headers;
+    self->_skip_headers = skip_headers;
+    self->_unquote = unquote;
+    self->_quotechar = *quotechar;
+    self->_newline = newline;
+    self->_owns_index = 0;
+    self->_index = _index;
+    self->_data = _data;
+    self->_cache = _cache;
+
+    return (PyObject *)self;
+
+err_paths:
+    free(c_path);
+    free(a_path);
+    free(n_path);
+    munmap(file, ust.st_size);
+    close(ufd);
+    Py_DECREF(name_obj);
+    return NULL;
+}
+
+
 static PyMethodDef LazyCSV_Methods[] = {
     {
         "sequence",
         (PyCFunction)LazyCSV_Seq,
         METH_VARARGS|METH_KEYWORDS,
         "get column iterator"
+    },
+    {
+        "__reduce__",
+        (PyCFunction)LazyCSV_Reduce,
+        METH_NOARGS,
+        "serialize LazyCSV for pickling"
+    },
+    {
+        "from_index",
+        (PyCFunction)LazyCSV_FromIndex,
+        METH_VARARGS|METH_CLASS,
+        "reconstruct LazyCSV from pre-built index files"
     },
     {NULL, }
 };
@@ -1508,12 +1779,24 @@ static PyTypeObject LazyCSVType = {
 };
 
 
+static PyObject *LazyCSV_ModuleRebuild(PyObject *self, PyObject *args) {
+    return LazyCSV_FromIndex((PyObject *)&LazyCSVType, args);
+}
+
+
+static PyMethodDef LazyCSV_ModuleMethods[] = {
+    {"_rebuild", (PyCFunction)LazyCSV_ModuleRebuild, METH_VARARGS,
+     "rebuild a LazyCSV from pre-built index files (used by pickle)"},
+    {NULL, }
+};
+
+
 static PyModuleDef LazyCSVModule = {
     PyModuleDef_HEAD_INIT,
     "lazycsv",
     "module for custom lazycsv object",
     -1,
-    NULL
+    LazyCSV_ModuleMethods
 };
 
 
