@@ -102,6 +102,7 @@ typedef struct {
     size_t cols;
     int _skip_headers;
     int _unquote;
+    char _delimiter;
     char _quotechar;
     char _newline;
     int _owns_index;
@@ -552,7 +553,7 @@ static PyMethodDef LazyCSV_IterMethods[] = {
 static PyTypeObject LazyCSV_IterType = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "lazycsv_iterator",
-    .tp_itemsize = sizeof(LazyCSV_Iter),
+    .tp_basicsize = sizeof(LazyCSV_Iter),
     .tp_dealloc = (destructor)LazyCSV_IterDestruct,
     .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
     .tp_doc = "LazyCSV iterable",
@@ -570,7 +571,7 @@ static inline void LazyCSV_TempDirAsString(PyObject **tempdir, char **dirname) {
     *tempdir = PyObject_CallObject(tempdir_obj, NULL);
     PyObject* dirname_obj = PyObject_GetAttrString(*tempdir, "name");
     PyObject* dirstring = PyUnicode_AsUTF8String(dirname_obj);
-    *dirname = PyBytes_AsString(dirstring);
+    *dirname = strdup(PyBytes_AsString(dirstring));
 
     Py_DECREF(tempfile);
     Py_DECREF(tempdir_obj);
@@ -593,7 +594,7 @@ static inline void LazyCSV_FullNameFromName(PyObject *name,
     PyObject* __file__ = PyDict_GetItemString(global_vars, "__file__");
 
     if (isfile == Py_True) {
-        // owned reference which we keep
+        // owned reference which we keep; abspath returns bytes when given bytes
         *fullname_obj = PyObject_CallMethod(os_path, "abspath", "O", name);
         *fullname = PyBytes_AsString(*fullname_obj);
     }
@@ -609,7 +610,13 @@ static inline void LazyCSV_FullNameFromName(PyObject *name,
         PyObject *joined =
             PyObject_CallMethod(os_path, "join", "(OO)", dirname, name);
 
+        // join of bytes args returns bytes; abspath preserves the type
         *fullname_obj = PyObject_CallMethod(os_path, "abspath", "O", joined);
+        if (PyUnicode_CheckExact(*fullname_obj)) {
+            PyObject *tmp = PyUnicode_AsUTF8String(*fullname_obj);
+            Py_DECREF(*fullname_obj);
+            *fullname_obj = tmp;
+        }
         *fullname = PyBytes_AsString(*fullname_obj);
 
         Py_DECREF(joined);
@@ -631,7 +638,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     int skip_headers = 0;
     int unquote = 1;
     Py_ssize_t buffer_capacity = 2097152; // 2**21
-    char *dirname, *delimiter = ",", *quotechar = "\"";
+    char *dirname = NULL, *delimiter = ",", *quotechar = "\"";
     ssize_t bytes_written = 0;
 
     static char* kwlist[] = {
@@ -1073,6 +1080,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     self->headers = headers;
     self->_skip_headers = skip_headers;
     self->_unquote = unquote;
+    self->_delimiter = *delimiter;
     self->_quotechar = *quotechar;
     self->_newline = newline;
     self->_owns_index = 1;
@@ -1240,24 +1248,19 @@ static PyObject* LazyCSV_GetValue(PyObject* self, PyObject* r, PyObject* c) {
 
     LazyCSV* lazy = (LazyCSV*)self;
 
-    size_t row = _row < 0 ? lazy->rows + _row : (size_t)_row;
-    size_t col = _col < 0 ? lazy->cols + _col : (size_t)_col;
-
-    int row_in_bounds = (
-        0 <= row && row < lazy->rows
-    );
-
-    int col_in_bounds = (
-        0 <= col && col < lazy->cols
-    );
-
-    if (!row_in_bounds || !col_in_bounds) {
+    if ((_row < 0 && (size_t)(-_row) > lazy->rows) ||
+        (_row >= 0 && (size_t)_row >= lazy->rows) ||
+        (_col < 0 && (size_t)(-_col) > lazy->cols) ||
+        (_col >= 0 && (size_t)_col >= lazy->cols)) {
         PyErr_SetString(
             PyExc_ValueError,
             "provided value not in bounds of index"
         );
         return NULL;
     }
+
+    size_t row = _row < 0 ? lazy->rows + _row : (size_t)_row;
+    size_t col = _col < 0 ? lazy->cols + _col : (size_t)_col;
 
     row += !lazy->_skip_headers;
 
@@ -1459,13 +1462,11 @@ static PyMemberDef LazyCSV_Members[] = {
 static PyObject *LazyCSV_Reduce(PyObject *self, PyObject *Py_UNUSED(ignored)) {
     LazyCSV *lazy = (LazyCSV *)self;
 
-    // Once serialized, index files must outlive this object
-    lazy->_owns_index = 0;
-
     char qc[2] = {lazy->_quotechar, '\0'};
+    char dl[2] = {lazy->_delimiter, '\0'};
 
     PyObject *args = Py_BuildValue(
-        "(OssnniiiIsss)", lazy->name, ",", qc, (Py_ssize_t)lazy->rows,
+        "(OssnniiiIsss)", lazy->name, dl, qc, (Py_ssize_t)lazy->rows,
         (Py_ssize_t)lazy->cols, (int)lazy->_skip_headers, (int)lazy->_unquote,
         (int)lazy->_newline, (unsigned int)sizeof(INDEX_DTYPE),
         lazy->_index->commas->name,
@@ -1692,6 +1693,7 @@ static PyObject *LazyCSV_FromIndex(PyObject *cls, PyObject *args) {
     self->headers = headers;
     self->_skip_headers = skip_headers;
     self->_unquote = unquote;
+    self->_delimiter = *delimiter;
     self->_quotechar = *quotechar;
     self->_newline = newline;
     self->_owns_index = 0;
