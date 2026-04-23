@@ -697,7 +697,20 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
     Py_DECREF(name);
 
-    int ufd = open(fullname, O_RDONLY);
+    // --- resource tracking for cleanup ---
+    int ufd = -1;
+    char *file = MAP_FAILED;
+    PyObject *tempdir = NULL;
+    char *comma_index = NULL, *anchor_index = NULL, *newline_index = NULL;
+    int comma_file = -1, anchor_file = -1, newline_file = -1;
+    LazyCSV_Buffer comma_buffer = {0}, anchor_buffer = {0}, newline_buffer = {0};
+    char *comma_memmap = MAP_FAILED;
+    char *anchor_memmap = MAP_FAILED;
+    char *newline_memmap = MAP_FAILED;
+    struct stat comma_st, anchor_st, newline_st;
+    PyObject *headers = NULL;
+
+    ufd = open(fullname, O_RDONLY);
     if (ufd == -1) {
         PyErr_SetString(
             PyExc_FileNotFoundError,
@@ -705,7 +718,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             " check to be sure that the user has read permissions"
             " and/or ownership of the file, and that the file exists."
         );
-        return NULL;
+        goto cleanup;
     }
 
     struct stat ust;
@@ -714,36 +727,48 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             PyExc_RuntimeError,
             "unable to stat user file"
         );
-        goto close_ufd;
+        goto cleanup;
     }
 
     size_t file_len = ust.st_size;
 
     int mmap_flags = PROT_READ;
-    char* file = mmap(NULL, file_len, mmap_flags, MAP_PRIVATE, ufd, 0);
+    file = mmap(NULL, file_len, mmap_flags, MAP_PRIVATE, ufd, 0);
+    if (file == MAP_FAILED) {
+        PyErr_SetString(
+            PyExc_RuntimeError,
+            "unable to mmap user file"
+        );
+        goto cleanup;
+    }
 
-    PyObject* tempdir = NULL;
     if (!dirname) {
         LazyCSV_TempDirAsString(&tempdir, &dirname);
     }
 
-    char* comma_index = tempnam(dirname, "LzyC_");
-    char* anchor_index = tempnam(dirname, "LzyA_");
-    char* newline_index = tempnam(dirname, "LzyN_");
+    comma_index = tempnam(dirname, "LzyC_");
+    anchor_index = tempnam(dirname, "LzyA_");
+    newline_index = tempnam(dirname, "LzyN_");
 
     int file_flags = O_WRONLY|O_CREAT|O_EXCL;
 
-    int comma_file = open(comma_index, file_flags, S_IRWXU);
-    if (comma_file < 0)
-        goto close_comma_file;
+    comma_file = open(comma_index, file_flags, S_IRWXU);
+    if (comma_file < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "unable to open comma index file");
+        goto cleanup;
+    }
 
-    int anchor_file = open(anchor_index, file_flags, S_IRWXU);
-    if (anchor_file < 0)
-        goto close_anchor_file;
+    anchor_file = open(anchor_index, file_flags, S_IRWXU);
+    if (anchor_file < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "unable to open anchor index file");
+        goto cleanup;
+    }
 
-    int newline_file = open(newline_index, file_flags, S_IRWXU);
-    if (newline_file < 0)
-        goto close_newline_file;
+    newline_file = open(newline_index, file_flags, S_IRWXU);
+    if (newline_file < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "unable to open newline index file");
+        goto cleanup;
+    }
 
     char quoted = 0, c, cm1 = LINE_FEED, cm2 = 0;
     size_t rows = 0, cols = SIZE_MAX, row_index = 0, col_index = 0;
@@ -763,17 +788,14 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
     LazyCSV_AnchorPoint apnt;
 
-    LazyCSV_Buffer comma_buffer = {.data = malloc(buffer_capacity),
-                                   .size = 0,
-                                   .capacity = buffer_capacity};
+    comma_buffer.data = malloc(buffer_capacity);
+    comma_buffer.capacity = buffer_capacity;
 
-    LazyCSV_Buffer anchor_buffer = {.data = malloc(buffer_capacity),
-                                    .size = 0,
-                                    .capacity = buffer_capacity};
+    anchor_buffer.data = malloc(buffer_capacity);
+    anchor_buffer.capacity = buffer_capacity;
 
-    LazyCSV_Buffer newline_buffer = {.data = malloc(buffer_capacity),
-                                     .size = 0,
-                                     .capacity = buffer_capacity};
+    newline_buffer.data = malloc(buffer_capacity);
+    newline_buffer.capacity = buffer_capacity;
 
     for (size_t i = 0; i < file_len; i++) {
 
@@ -801,7 +823,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
                                 &comma_buffer, anchor_file, &anchor_buffer);
             if (bytes_written < 0)
-                goto close_newline_file;
+                goto cleanup;
         }
 
         if (c == *quotechar) {
@@ -813,7 +835,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
                                 &comma_buffer, anchor_file, &anchor_buffer);
             if (bytes_written < 0)
-                goto close_newline_file;
+                goto cleanup;
             if (cols == SIZE_MAX || col_index < cols) {
                 col_index += 1;
             }
@@ -845,7 +867,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
                 bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
                                     &comma_buffer, anchor_file, &anchor_buffer);
                 if (bytes_written < 0)
-                    goto close_newline_file;
+                    goto cleanup;
             }
             else {
                 overflow = SIZE_MAX;
@@ -864,7 +886,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
                                       &comma_buffer, anchor_file,
                                       &anchor_buffer);
                     if (bytes_written < 0)
-                        goto close_newline_file;
+                        goto cleanup;
                   col_index += 1;
                 }
             }
@@ -893,13 +915,13 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
         bytes_written = LazyCSV_ValueToDisk(file_len + 1, &ridx, &apnt, col_index, comma_file,
                             &comma_buffer, anchor_file, &anchor_buffer);
         if (bytes_written < 0)
-            goto close_newline_file;
+            goto cleanup;
 
         bytes_written = LazyCSV_BufferWrite(newline_file, &newline_buffer, &ridx,
                             sizeof(LazyCSV_RowIndex));
 
         if (bytes_written < 0)
-            goto close_newline_file;
+            goto cleanup;
     }
 
     if (overflow_warning)
@@ -921,60 +943,47 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
     bytes_written = LazyCSV_BufferFlush(comma_file, &comma_buffer);
     if (bytes_written < 0)
-        goto close_newline_file;
+        goto cleanup;
     bytes_written = LazyCSV_BufferFlush(anchor_file, &anchor_buffer);
     if (bytes_written < 0)
-        goto close_newline_file;
+        goto cleanup;
     bytes_written = LazyCSV_BufferFlush(newline_file, &newline_buffer);
     if (bytes_written < 0)
-        goto close_newline_file;
+        goto cleanup;
 
+    // close write handles, free write buffers, reopen as read-only for mmap
     close(comma_file);
     close(anchor_file);
     close(newline_file);
 
-    free(comma_buffer.data);
-    free(anchor_buffer.data);
-    free(newline_buffer.data);
+    free(comma_buffer.data);  comma_buffer.data = NULL;
+    free(anchor_buffer.data); anchor_buffer.data = NULL;
+    free(newline_buffer.data); newline_buffer.data = NULL;
 
     comma_file = open(comma_index, O_RDWR);
-    struct stat comma_st;
-    if (fstat(comma_file, &comma_st) < 0) {
-        PyErr_SetString(
-            PyExc_RuntimeError,
-            "unable to stat comma file"
-        );
-        goto close_comma_file;
+    if (comma_file < 0 || fstat(comma_file, &comma_st) < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "unable to stat comma file");
+        goto cleanup;
     }
 
     anchor_file = open(anchor_index, O_RDWR);
-    struct stat anchor_st;
-    if (fstat(anchor_file, &anchor_st) < 0) {
-        PyErr_SetString(
-            PyExc_RuntimeError,
-            "unable to stat anchor file"
-        );
-        goto close_anchor_file;
+    if (anchor_file < 0 || fstat(anchor_file, &anchor_st) < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "unable to stat anchor file");
+        goto cleanup;
     }
 
     newline_file = open(newline_index, O_RDWR);
-    struct stat newline_st;
-    if (fstat(newline_file, &newline_st) < 0) {
-        PyErr_SetString(
-            PyExc_RuntimeError,
-            "unable to stat newline file"
-        );
-        goto close_newline_file;
+    if (newline_file < 0 || fstat(newline_file, &newline_st) < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "unable to stat newline file");
+        goto cleanup;
     }
 
-    char *comma_memmap =
+    comma_memmap =
         mmap(NULL, comma_st.st_size, mmap_flags, MAP_PRIVATE, comma_file, 0);
-    char *anchor_memmap =
+    anchor_memmap =
         mmap(NULL, anchor_st.st_size, mmap_flags, MAP_PRIVATE, anchor_file, 0);
-    char *newline_memmap =
+    newline_memmap =
         mmap(NULL, newline_st.st_size, mmap_flags, MAP_PRIVATE, newline_file, 0);
-
-    PyObject* headers;
 
     if (!skip_headers) {
         headers = PyTuple_New(cols);
@@ -1017,7 +1026,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             PyExc_MemoryError,
             "unable to allocate LazyCSV object"
         );
-        goto unmap_memmaps;
+        goto cleanup;
     }
 
     LazyCSV_Cache* _cache = malloc(sizeof(LazyCSV_Cache));
@@ -1073,25 +1082,35 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
     return (PyObject*)self;
 
-unmap_memmaps:
-    munmap(comma_memmap, comma_st.st_size);
-    munmap(anchor_memmap, anchor_st.st_size);
-    munmap(newline_memmap, newline_st.st_size);
-    Py_DECREF(headers);
+cleanup:
+    free(comma_buffer.data);
+    free(anchor_buffer.data);
+    free(newline_buffer.data);
 
-close_newline_file:
-    close(newline_file);
+    if (comma_memmap != MAP_FAILED)
+        munmap(comma_memmap, comma_st.st_size);
+    if (anchor_memmap != MAP_FAILED)
+        munmap(anchor_memmap, anchor_st.st_size);
+    if (newline_memmap != MAP_FAILED)
+        munmap(newline_memmap, newline_st.st_size);
 
-close_anchor_file:
-    close(anchor_file);
+    Py_XDECREF(headers);
 
-close_comma_file:
-    close(comma_file);
-    munmap(file, ust.st_size);
+    if (comma_file >= 0)  close(comma_file);
+    if (anchor_file >= 0) close(anchor_file);
+    if (newline_file >= 0) close(newline_file);
+
+    free(comma_index);
+    free(anchor_index);
+    free(newline_index);
+
+    if (file != MAP_FAILED)
+        munmap(file, ust.st_size);
+
     Py_XDECREF(tempdir);
 
-close_ufd:
-    close(ufd);
+    if (ufd >= 0) close(ufd);
+
     return NULL;
 }
 
