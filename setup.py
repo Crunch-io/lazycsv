@@ -63,7 +63,7 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="lazycsv",
-    version="1.2.0",
+    version="1.2.1",
     author="Michael Green, Chris Perkins",
     author_email="dev@crunch.io",
     description="an fast, memory efficient csv parser",
@@ -88,6 +88,7 @@ setup(
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Utilities",
     ],
