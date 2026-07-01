@@ -1,6 +1,6 @@
 #!/bin/bash
 
-versions="3.5 3.6 3.7 3.8 3.9 3.10 3.11 3.12 3.13"
+versions="3.8 3.9 3.10 3.11 3.12 3.13"
 
 function run_version_tests {
     if [ "--build" = $2 ]
@@ -19,45 +19,33 @@ function run_benchmarks {
 function print_help {
     echo "bash commands:"
     echo "- bench: run benchmarks"
+    echo "- build: build extension with numpy enabled"
     echo "- test: run test suite"
-    echo "- testrunner: spin up docker container for testing purposes"
+    echo "- setup: install pyenv versions and dependencies"
     echo "- tox: run tox"
 }
 
-function run_testrunner {
-    if [ -z $(command -v docker) ]
+function run_setup {
+    if [ -z $(command -v pyenv) ]
     then
-        echo "environment tests requires docker executable"
+        echo "setup requires pyenv"
         exit 1
     fi
 
-    container=lazycsv_testrunner
-    if [[ -z $(docker ps -a --format {{.Names}} | grep $container) ]]
-    then
-        docker run \
-            -v $(pwd):/code \
-            --name $container \
-            -e LAZYCSV_INCLUDE_NUMPY=1 \
-            -e PYENV_ROOT="/root/.pyenv" \
-            -e PATH="/root/.pyenv/shims:/root/.pyenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-            -dit debian:bookworm
-        docker exec $container bash \
-            -c "apt-get update && apt-get install git wget tar make gcc build-essential gdb lcov pkg-config libbz2-dev libffi-dev libgdbm-dev libgdbm-compat-dev liblzma-dev libncurses5-dev libreadline6-dev libsqlite3-dev libssl-dev lzma lzma-dev tk-dev uuid-dev zlib1g-dev -y"
-        docker exec $container bash \
-            -c "cd /root && git clone --depth=1 https://github.com/pyenv/pyenv.git .pyenv"
-        docker exec $container bash -c "pyenv install $versions"
-        docker exec $container bash -c "pyenv local $versions"
-        for version in $versions
-        do
-            docker exec $container bash \
-                -c "python$version -m pip install numpy pytest && python$version -m pip install -e /code"
-        done
-        docker exec $container bash \
-            -c "python3.11 -m pip install tox"
-    else
-        docker start $container > /dev/null
-    fi
-    docker exec -it $container bash
+    for version in $versions
+    do
+        pyenv install -s $version
+    done
+
+    pyenv local $versions
+
+    for version in $versions
+    do
+        python$version -m pip install numpy pytest
+        python$version -m pip install -e .
+    done
+
+    python3.11 -m pip install tox
 }
 
 function run_tox {
@@ -73,12 +61,17 @@ function run_debug {
     && gdb --args python -m pytest ${@:2}
 }
 
+function run_build {
+    LAZYCSV_INCLUDE_NUMPY=1 \
+    python setup.py build_ext --inplace --force
+}
+
 case $1 in
-    testrunner) run_testrunner $@ ;;
+    setup) run_setup $@ ;;
     test) run_version_tests $@ ;;
     bench) run_benchmarks $@ ;;
+    build) run_build $@ ;;
     debug) run_debug $@ ;;
     tox) run_tox $@ ;;
     *) print_help $@ ;;
 esac
-

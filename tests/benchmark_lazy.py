@@ -34,6 +34,42 @@ def run_lazy(fpath):
     print(f"\ntotal time: {tf-ti}")
 
 
+def _parse_cols(args):
+    lazy, col_range = args
+    for c in col_range:
+        col = list(lazy.sequence(col=c))
+        del col
+
+
+def run_lazy_parallel(fpath, nworkers=None):
+    import multiprocessing
+    from lazycsv import lazycsv
+
+    if nworkers is None:
+        nworkers = os.cpu_count() or 4
+
+    print("indexing lazy... ", end="\r")
+    ti = perf_counter()
+    lazy = lazycsv.LazyCSV(fpath)
+    te = perf_counter()
+    print(f"indexing lazy... time to index: {te-ti}")
+
+    # split columns into chunks, one per worker
+    chunk_size = (lazy.cols + nworkers - 1) // nworkers
+    chunks = [
+        range(i, min(i + chunk_size, lazy.cols))
+        for i in range(0, lazy.cols, chunk_size)
+    ]
+
+    print(f"parsing cols... ({nworkers} workers)", end="\r")
+    with multiprocessing.Pool(nworkers) as pool:
+        pool.map(_parse_cols, [(lazy, chunk) for chunk in chunks])
+    tf = perf_counter()
+    print(f"parsing cols... time to parse: {tf-te}")
+    del lazy
+    print(f"total time: {tf-ti}")
+
+
 def run_sqlite(fpath):
     import sqlite3, csv
     tempdir = tempfile.TemporaryDirectory()
@@ -172,11 +208,12 @@ def run_polars_scan(fpath):
 
 
 def main():
-    cols = 5000
-    rows = 50000
-    sparsity = 0.50
+    cols = 10000
+    rows = 100000
+    sparsity = 0.95
     benchmarks = {
-        "lazycsv": run_lazy,
+        # "lazycsv": run_lazy,
+        "lazycsv (parallel)": run_lazy_parallel,
         # "pandas": run_pandas,
         # "pyarrow": run_pyarrow,
         # "datatable": run_datatable,
