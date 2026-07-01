@@ -804,6 +804,8 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     newline_buffer.data = malloc(buffer_capacity);
     newline_buffer.capacity = buffer_capacity;
 
+    PyThreadState *_save_state = PyEval_SaveThread();
+
     for (size_t i = 0; i < file_len; i++) {
 
         if (overflow != SIZE_MAX && i < overflow) {
@@ -830,7 +832,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
                                 &comma_buffer, anchor_file, &anchor_buffer);
             if (bytes_written < 0)
-                goto cleanup;
+                goto cleanup_no_gil;
         }
 
         if (c == *quotechar) {
@@ -842,7 +844,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
                                 &comma_buffer, anchor_file, &anchor_buffer);
             if (bytes_written < 0)
-                goto cleanup;
+                goto cleanup_no_gil;
             if (cols == SIZE_MAX || col_index < cols) {
                 col_index += 1;
             }
@@ -874,7 +876,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
                 bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
                                     &comma_buffer, anchor_file, &anchor_buffer);
                 if (bytes_written < 0)
-                    goto cleanup;
+                    goto cleanup_no_gil;
             }
             else {
                 overflow = SIZE_MAX;
@@ -893,7 +895,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
                                       &comma_buffer, anchor_file,
                                       &anchor_buffer);
                     if (bytes_written < 0)
-                        goto cleanup;
+                        goto cleanup_no_gil;
                   col_index += 1;
                 }
             }
@@ -922,14 +924,26 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
         bytes_written = LazyCSV_ValueToDisk(file_len + 1, &ridx, &apnt, col_index, comma_file,
                             &comma_buffer, anchor_file, &anchor_buffer);
         if (bytes_written < 0)
-            goto cleanup;
+            goto cleanup_no_gil;
 
         bytes_written = LazyCSV_BufferWrite(newline_file, &newline_buffer, &ridx,
                             sizeof(LazyCSV_RowIndex));
 
         if (bytes_written < 0)
-            goto cleanup;
+            goto cleanup_no_gil;
     }
+
+    bytes_written = LazyCSV_BufferFlush(comma_file, &comma_buffer);
+    if (bytes_written < 0)
+        goto cleanup_no_gil;
+    bytes_written = LazyCSV_BufferFlush(anchor_file, &anchor_buffer);
+    if (bytes_written < 0)
+        goto cleanup_no_gil;
+    bytes_written = LazyCSV_BufferFlush(newline_file, &newline_buffer);
+    if (bytes_written < 0)
+        goto cleanup_no_gil;
+
+    PyEval_RestoreThread(_save_state);
 
     if (overflow_warning)
         PyErr_WarnEx(
@@ -947,16 +961,6 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
     rows = row_index - overcount + skip_headers;
     cols = cols + 1;
-
-    bytes_written = LazyCSV_BufferFlush(comma_file, &comma_buffer);
-    if (bytes_written < 0)
-        goto cleanup;
-    bytes_written = LazyCSV_BufferFlush(anchor_file, &anchor_buffer);
-    if (bytes_written < 0)
-        goto cleanup;
-    bytes_written = LazyCSV_BufferFlush(newline_file, &newline_buffer);
-    if (bytes_written < 0)
-        goto cleanup;
 
     // close write handles, free write buffers, reopen as read-only for mmap
     close(comma_file);
@@ -1090,6 +1094,8 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
     return (PyObject*)self;
 
+cleanup_no_gil:
+    PyEval_RestoreThread(_save_state);
 cleanup:
     free(comma_buffer.data);
     free(anchor_buffer.data);
@@ -1736,7 +1742,7 @@ static PyMethodDef LazyCSV_Methods[] = {
     {NULL, }
 };
 
-static PyMappingMethods LazyCSV_MappingMembers[] = {
+static PyMappingMethods LazyCSV_MappingMembers = {
     (lenfunc)NULL,
     (binaryfunc)LazyCSV_GetItem,
     (objobjargproc)NULL,
@@ -1795,7 +1801,7 @@ static PyTypeObject LazyCSVType = {
     .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
     .tp_methods = LazyCSV_Methods,
     .tp_members = LazyCSV_Members,
-    .tp_as_mapping = LazyCSV_MappingMembers,
+    .tp_as_mapping = &LazyCSV_MappingMembers,
     .tp_new = LazyCSV_New,
 };
 

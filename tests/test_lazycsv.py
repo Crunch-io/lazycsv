@@ -609,3 +609,151 @@ class TestEdgecases:
             [b" Amazonas", b" Amazonas", b" Amazonas", b" Amazonas"],
         ]
         assert actual == expected
+
+
+class TestThreadSafety:
+    """Tests to verify the GIL is properly released during CSV parsing.
+
+    These tests confirm that background threads can run while lazycsv
+    is parsing a file, which is critical for applications that rely on
+    heartbeat threads (e.g., RabbitMQ, workflow liveness).
+    """
+
+    def test_background_thread_runs_during_parse(self):
+        """Verify a background thread can execute while LazyCSV parses."""
+        import threading
+        import time
+
+        # Create a CSV large enough that parsing takes measurable time (~200ms)
+        tempf = tempfile.NamedTemporaryFile(delete=False)
+        cols, rows = 500, 20000
+        headers = ",".join(f"col_{i}" for i in range(cols)) + "\n"
+        tempf.write(headers.encode("utf8"))
+        for r in range(rows):
+            row = ",".join(f"val_{r}_{c}" for c in range(cols)) + "\n"
+            tempf.write(row.encode("utf8"))
+        tempf.flush()
+        tempf.close()
+
+        # Track how many times the background thread was able to run
+        counter = {"value": 0}
+        started_event = threading.Event()
+        stop_event = threading.Event()
+
+        def heartbeat():
+            started_event.set()
+            while not stop_event.is_set():
+                counter["value"] += 1
+                time.sleep(0.001)  # 1ms interval
+
+        thread = threading.Thread(target=heartbeat, daemon=True)
+        thread.start()
+        # Wait for thread to be actively running before we start parsing
+        started_event.wait()
+        time.sleep(0.01)  # let it do a few iterations
+        counter["value"] = 0  # reset counter right before parse
+
+        try:
+            # Parse the CSV (this used to hold the GIL the entire time)
+            start = time.time()
+            lazy = lazycsv.LazyCSV(tempf.name)
+            elapsed = time.time() - start
+            # Access data to confirm parsing succeeded
+            assert lazy.rows == rows
+            assert lazy.cols == cols
+        finally:
+            stop_event.set()
+            thread.join(timeout=2)
+            os.unlink(tempf.name)
+
+        # If the GIL was released, the heartbeat thread should have run
+        # many times during the ~200ms parse. With 1ms sleeps we expect
+        # at least ~50 iterations. If the GIL was NOT released, the counter
+        # would be 0 (thread couldn't run at all during the C call).
+        expected_min = max(5, int(elapsed * 100))  # at least 10% of theoretical max
+        assert counter["value"] >= expected_min, (
+            f"Background thread only ran {counter['value']} times during "
+            f"{elapsed*1000:.0f}ms parse. Expected >= {expected_min}. "
+            f"GIL may not be released during CSV parsing."
+        )
+
+    def test_multiple_concurrent_parses(self):
+        """Verify multiple threads can parse different files concurrently."""
+        import threading
+
+        num_threads = 4
+        results = [None] * num_threads
+        errors = []
+
+        def parse_csv(idx):
+            try:
+                tempf = tempfile.NamedTemporaryFile(delete=False)
+                cols, rows = 50, 1000
+                headers = ",".join(f"col_{i}" for i in range(cols)) + "\n"
+                tempf.write(headers.encode("utf8"))
+                for r in range(rows):
+                    row = ",".join(f"{idx}_{r}_{c}" for c in range(cols)) + "\n"
+                    tempf.write(row.encode("utf8"))
+                tempf.flush()
+                tempf.close()
+
+                lazy = lazycsv.LazyCSV(tempf.name)
+                results[idx] = (lazy.rows, lazy.cols)
+                os.unlink(tempf.name)
+            except Exception as e:
+                errors.append((idx, e))
+
+        threads = [threading.Thread(target=parse_csv, args=(i,)) for i in range(num_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert not errors, f"Threads raised errors: {errors}"
+        for i in range(num_threads):
+            assert results[i] == (1000, 50), f"Thread {i} got unexpected result: {results[i]}"
+
+    def test_data_integrity_with_concurrent_heartbeat(self):
+        """Verify parsed data is correct when background threads are active."""
+        import threading
+        import time
+
+        tempf = tempfile.NamedTemporaryFile(delete=False)
+        cols, rows = 100, 2000
+        headers = ",".join(f"h{i}" for i in range(cols)) + "\n"
+        tempf.write(headers.encode("utf8"))
+        for r in range(rows):
+            row = ",".join(str(r * cols + c) for c in range(cols)) + "\n"
+            tempf.write(row.encode("utf8"))
+        tempf.flush()
+        tempf.close()
+
+        stop_event = threading.Event()
+
+        def busy_thread():
+            while not stop_event.is_set():
+                time.sleep(0.0005)
+
+        threads = [threading.Thread(target=busy_thread, daemon=True) for _ in range(4)]
+        for t in threads:
+            t.start()
+
+        try:
+            lazy = lazycsv.LazyCSV(tempf.name)
+            assert lazy.rows == rows
+            assert lazy.cols == cols
+
+            # Verify actual data values are correct
+            # Check first row
+            for c in range(cols):
+                val = lazy.sequence(col=c).__next__()
+                assert val == str(c).encode(), f"col {c} row 0: got {val}"
+
+            # Check last row
+            col0_data = list(lazy.sequence(col=0))
+            assert col0_data[-1] == str((rows - 1) * cols).encode()
+        finally:
+            stop_event.set()
+            for t in threads:
+                t.join(timeout=2)
+            os.unlink(tempf.name)

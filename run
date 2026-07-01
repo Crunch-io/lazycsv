@@ -19,6 +19,7 @@ function run_benchmarks {
 function print_help {
     echo "bash commands:"
     echo "- bench: run benchmarks"
+    echo "- build: build extension with numpy enabled"
     echo "- test: run test suite"
     echo "- testrunner: spin up docker container for testing purposes"
     echo "- tox: run tox"
@@ -73,10 +74,16 @@ function run_debug {
     && gdb --args python -m pytest ${@:2}
 }
 
+function run_build {
+    LAZYCSV_INCLUDE_NUMPY=1 \
+    python setup.py build_ext --inplace --force
+}
+
 case $1 in
     testrunner) run_testrunner $@ ;;
     test) run_version_tests $@ ;;
     bench) run_benchmarks $@ ;;
+    build) run_build $@ ;;
     debug) run_debug $@ ;;
     tox) run_tox $@ ;;
     *) print_help $@ ;;
