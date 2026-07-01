@@ -1176,7 +1176,7 @@ static PyObject *LazyCSV_Seq(PyObject *self, PyObject *args, PyObject *kwargs) {
     size_t row = SIZE_MAX;
     size_t col = SIZE_MAX;
     size_t stop;
-    char reversed;
+    char reversed = 0;
 
     static char *kwlist[] = {"row", "col", "reversed", NULL};
 

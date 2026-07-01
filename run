@@ -20,6 +20,7 @@ function print_help {
     echo "bash commands:"
     echo "- bench: run benchmarks"
     echo "- build: build extension with numpy enabled"
+    echo "- publish: build sdist and wheel, upload to PyPI"
     echo "- test: run test suite"
     echo "- setup: install pyenv versions and dependencies"
     echo "- tox: run tox"
@@ -66,12 +67,19 @@ function run_build {
     python setup.py build_ext --inplace --force
 }
 
+function run_publish {
+    rm -rf dist/
+    pyproject-build --sdist
+    twine upload dist/*
+}
+
 case $1 in
     setup) run_setup $@ ;;
     test) run_version_tests $@ ;;
     bench) run_benchmarks $@ ;;
     build) run_build $@ ;;
     debug) run_debug $@ ;;
+    publish) run_publish $@ ;;
     tox) run_tox $@ ;;
     *) print_help $@ ;;
 esac
