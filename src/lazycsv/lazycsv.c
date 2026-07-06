@@ -172,10 +172,15 @@ static inline ssize_t LazyCSV_ValueToDisk(size_t value, LazyCSV_RowIndex *ridx,
                                        LazyCSV_Buffer *cbuf, int afile,
                                        LazyCSV_Buffer *abuf) {
 
-    size_t target = value - apnt->value;
+    // Delta encoding: subtract col_index so that the stored value represents
+    // the difference between the byte position and what it would be if fields
+    // had zero width (i.e. only delimiters). This produces smaller values that
+    // are more likely to fit within INDEX_DTYPE without needing new anchors.
+    size_t delta_value = value - col_index;
+    size_t target = delta_value - apnt->value;
 
     if (target > INDEX_DTYPE_MAX) {
-        *apnt = (LazyCSV_AnchorPoint){.value = value, .col = col_index+1};
+        *apnt = (LazyCSV_AnchorPoint){.value = delta_value, .col = col_index};
         ssize_t bytes_written = LazyCSV_BufferWrite(afile, abuf, apnt, sizeof(LazyCSV_AnchorPoint));
         if (bytes_written < 0)
             return bytes_written;
@@ -232,7 +237,9 @@ static inline size_t LazyCSV_ValueFromIndex(size_t value,
     size_t cval = *(INDEX_DTYPE *)(cmap + (value * sizeof(INDEX_DTYPE)));
     size_t aval =
         LazyCSV_AnchorValueFromValue(value, (LazyCSV_AnchorPoint *)amap, ridx);
-    return aval == SIZE_MAX ? aval : cval + aval;
+    // Delta decoding: add back the column index that was subtracted during
+    // indexing to recover the actual byte position.
+    return aval == SIZE_MAX ? aval : cval + aval + value;
 }
 
 
@@ -841,7 +848,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
 
         else if (!quoted && c == *delimiter) {
             size_t val = i + 1;
-            bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
+            bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index + 1, comma_file,
                                 &comma_buffer, anchor_file, &anchor_buffer);
             if (bytes_written < 0)
                 goto cleanup_no_gil;
@@ -873,7 +880,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
             size_t val = i + 1;
 
             if (overflow == SIZE_MAX) {
-                bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
+                bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index + 1, comma_file,
                                     &comma_buffer, anchor_file, &anchor_buffer);
                 if (bytes_written < 0)
                     goto cleanup_no_gil;
@@ -891,7 +898,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
                     "column underflow encountered while parsing CSV, "
                     "missing values will be filled with the empty bytestring!";
                 while (col_index < cols) {
-                    bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index, comma_file,
+                    bytes_written = LazyCSV_ValueToDisk(val, &ridx, &apnt, col_index + 1, comma_file,
                                       &comma_buffer, anchor_file,
                                       &anchor_buffer);
                     if (bytes_written < 0)
@@ -921,7 +928,7 @@ static PyObject *LazyCSV_New(PyTypeObject *type, PyObject *args,
     char overcount = last_char == CARRIAGE_RETURN || last_char == LINE_FEED;
 
     if (!overcount) {
-        bytes_written = LazyCSV_ValueToDisk(file_len + 1, &ridx, &apnt, col_index, comma_file,
+        bytes_written = LazyCSV_ValueToDisk(file_len + 1, &ridx, &apnt, col_index + 1, comma_file,
                             &comma_buffer, anchor_file, &anchor_buffer);
         if (bytes_written < 0)
             goto cleanup_no_gil;
